@@ -15,9 +15,9 @@ import {
   type LlmProviderConfig,
   ToolRegistrationInput,
 } from "../../config/mcp-config.interface";
-import { LLM_PROVIDER_CONFIG_TOKEN } from "../../config/constants";
 import { McpOutput } from "../../interface/mcp.interface";
 import { ConversationTurn } from "../../session/memory.interface";
+import { LLM_PROVIDER_CONFIG_TOKEN } from "../../../src/config/constants";
 
 @Injectable()
 export class GeminiClientService implements ILlmClient {

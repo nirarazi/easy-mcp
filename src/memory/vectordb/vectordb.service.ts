@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 
 // src/memory/VectorDB.service.ts
 
 import type { LTMConfig } from "../../config/mcp-config.interface"; // Config definition
 import { EmbeddingService } from "../../providers/embedding/embedding.service"; // Assumes a service for generating vectors
+import { VECTOR_DB_CONFIG } from "../../../src/config/constants";
 
 /**
  * Represents a document snippet retrieved from the VectorDB.
@@ -23,7 +24,7 @@ export class VectorDBService {
   private collectionName: string;
 
   constructor(
-    config: LTMConfig,
+    @Inject(VECTOR_DB_CONFIG) config: LTMConfig,
     private embeddingService: EmbeddingService,
   ) {
     this.endpoint = config.vectorDB.endpoint;

@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { EMBEDDING_CLIENT_TOKEN } from "../../config/constants";
 
 // import { GeminiClient } from './GeminiClient'; // Reusing the underlying client
 
@@ -6,7 +7,7 @@ import { Injectable } from "@nestjs/common";
 export class EmbeddingService {
   private llmClient: EmbeddingClient; // The same underlying client used for LlmProviderService
 
-  constructor(clientInstance: EmbeddingClient) {
+  constructor(@Inject(EMBEDDING_CLIENT_TOKEN) clientInstance: EmbeddingClient) {
     this.llmClient = clientInstance;
   }
 
@@ -27,13 +28,13 @@ export class EmbeddingService {
   }
 }
 
-interface EmbeddingClient {
+export interface EmbeddingClient {
   embedContent: (args: {
     model: string;
     content: string;
   }) => Promise<EmbeddingResult>;
 }
 
-interface EmbeddingResult {
+export interface EmbeddingResult {
   embedding: number[];
 }

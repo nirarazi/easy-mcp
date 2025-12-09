@@ -1,8 +1,7 @@
 import { Module, DynamicModule, Global } from "@nestjs/common";
 import { SessionMemoryService } from "./session-memory.service";
 import { McpConfig } from "../config/mcp-config.interface";
-import { CONFIG_TOKEN } from "../config/constants";
-import { MEMORY_SERVICE_TOKEN } from "./memory.interface";
+import { CONFIG_TOKEN, MEMORY_SERVICE_TOKEN } from "../config/constants";
 
 @Global()
 @Module({})

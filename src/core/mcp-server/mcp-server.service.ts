@@ -1,15 +1,13 @@
 import { Injectable, Inject, OnModuleInit } from "@nestjs/common";
 import { LlmProviderService } from "../../providers/llm-provider/llm-provider.service";
 import { ToolRegistryService } from "../../tooling/tool-registry/tool-registry.service";
-import { SYSTEM_INSTRUCTION_TOKEN } from "../../config/constants";
-import {
-  MEMORY_SERVICE_TOKEN,
-  type IMemoryService,
-} from "../../memory/memory.interface";
 import {
   INTERFACE_LAYER_TOKEN,
-  type IInterfaceLayer,
-} from "../../interface/interface.interface";
+  MEMORY_SERVICE_TOKEN,
+  SYSTEM_INSTRUCTION_TOKEN,
+} from "../../config/constants";
+import { type IMemoryService } from "../../memory/memory.interface";
+import { type IInterfaceLayer } from "../../interface/interface.interface";
 import { WebSocketGatewayService } from "../../interface/websocket-gateway.service";
 // Assuming the relative path is correct from this file's location
 import {

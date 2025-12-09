@@ -26,9 +26,3 @@ export interface IMemoryService {
     modelResponse: string,
   ): Promise<void>;
 }
-
-/**
- * The Dependency Injection token used to reference the IMemoryService implementation.
- * This should be used for @Inject() in consumer services (like McpServerService).
- */
-export const MEMORY_SERVICE_TOKEN = "IMemoryService";
