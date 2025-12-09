@@ -1,0 +1,4 @@
+src/app.module.ts(9,10): error TS2305: Module '"./config/constants"' has no exported member 'LLM_CONFIG'.
+src/app.module.ts(12,7): error TS2739: Type '{}' is missing the following properties from type 'McpConfig': persistence, llmProvider, ltmConfig, tools
+src/memory/firestore-memory/firestore-memory.service.ts(58,20): error TS2448: Block-scoped variable 'doc' used before its declaration.
+src/memory/firestore-memory/firestore-memory.service.ts(58,20): error TS2454: Variable 'doc' is used before being assigned.

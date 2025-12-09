@@ -1,0 +1,47 @@
+
+> easy-mcp-framework@0.0.1 lint /Users/nirarazi/Sites/easy-mcp-framework
+> eslint "{src,apps,libs,test}/**/*.ts" --fix
+
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/EasyMCP.ts
+  38:11  error  Unsafe assignment of an `any` value                @typescript-eslint/no-unsafe-assignment
+  39:5   error  Unsafe call of a(n) `any` typed value              @typescript-eslint/no-unsafe-call
+  39:21  error  Unsafe member access .setConfig on an `any` value  @typescript-eslint/no-unsafe-member-access
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/core/mcp-server/mcp-server.service.ts
+  71:7   warning  Unsafe argument of type `any[]` assigned to a parameter of type `ToolDefinition[]`  @typescript-eslint/no-unsafe-argument
+  87:15  error    Unsafe assignment of an `any` value                                                 @typescript-eslint/no-unsafe-assignment
+  94:11  error    Unsafe assignment of an `any` value                                                 @typescript-eslint/no-unsafe-assignment
+  96:11  error    Unsafe assignment of an `any` value                                                 @typescript-eslint/no-unsafe-assignment
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/memory/firestore-memory/firestore-memory.service.ts
+  42:32  warning  Unsafe argument of type `any` assigned to a parameter of type `FirebaseOptions`  @typescript-eslint/no-unsafe-argument
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/memory/vectordb/vectordb.service.ts
+  64:11  error  Unsafe assignment of an `any` value                @typescript-eslint/no-unsafe-assignment
+  66:20  error  Unsafe member access .documents on an `any` value  @typescript-eslint/no-unsafe-member-access
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/providers/embedding/embedding.service.ts
+  10:5   error  Unsafe assignment of an `any` value                   @typescript-eslint/no-unsafe-assignment
+  20:11  error  Unsafe assignment of an `any` value                   @typescript-eslint/no-unsafe-assignment
+  20:26  error  Unsafe call of a(n) `any` typed value                 @typescript-eslint/no-unsafe-call
+  20:41  error  Unsafe member access .embedContent on an `any` value  @typescript-eslint/no-unsafe-member-access
+  26:5   error  Unsafe return of a value of type `any`                @typescript-eslint/no-unsafe-return
+  26:19  error  Unsafe member access .embedding on an `any` value     @typescript-eslint/no-unsafe-member-access
+
+/Users/nirarazi/Sites/easy-mcp-framework/src/providers/gemini/gemini-client.service.ts
+  23:3   error  Async method 'generateContent' has no 'await' expression      @typescript-eslint/require-await
+  25:5   error  'tools' is defined but never used                             @typescript-eslint/no-unused-vars
+  26:5   error  'systemInstruction' is defined but never used                 @typescript-eslint/no-unused-vars
+  46:11  error  Unsafe assignment of an `any` value                           @typescript-eslint/no-unsafe-assignment
+  46:38  error  Unsafe member access .usageMetadata on an `any` value         @typescript-eslint/no-unsafe-member-access
+  49:29  error  Unsafe member access .text on an `any` value                  @typescript-eslint/no-unsafe-member-access
+  52:36  error  Unsafe member access .promptTokenCount on an `any` value      @typescript-eslint/no-unsafe-member-access
+  53:40  error  Unsafe member access .candidatesTokenCount on an `any` value  @typescript-eslint/no-unsafe-member-access
+  54:35  error  Unsafe member access .totalTokenCount on an `any` value       @typescript-eslint/no-unsafe-member-access
+  56:7   error  Unsafe assignment of an `any` value                           @typescript-eslint/no-unsafe-assignment
+  56:29  error  Unsafe member access .functionCall on an `any` value          @typescript-eslint/no-unsafe-member-access
+
+✖ 27 problems (25 errors, 2 warnings)
+
+ ELIFECYCLE  Command failed with exit code 1.

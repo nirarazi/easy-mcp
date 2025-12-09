@@ -1,0 +1,3 @@
+src/app.module.ts(31,3): error TS2322: Type '(args: { query: string; }) => Promise<string>' is not assignable to type '(args: Record<string, any>) => Promise<any>'.
+  Types of parameters 'args' and 'args' are incompatible.
+    Property 'query' is missing in type 'Record<string, any>' but required in type '{ query: string; }'.
