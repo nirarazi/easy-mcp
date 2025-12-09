@@ -1,6 +1,0 @@
-src/main.ts(6,18): error TS2353: Object literal may only specify known properties, and 'enabled' does not exist in type 'PersistenceConfig'.
-src/main.ts(7,16): error TS2353: Object literal may only specify known properties, and 'enabled' does not exist in type 'LTMConfig'.
-src/main.ts(19,16): error TS2339: Property 'run' does not exist on type 'typeof EasyMCP'.
-src/providers/gemini/gemini-client.service.ts(40,11): error TS2322: Type '{ functionDeclarations: FunctionDeclaration[]; }[] | undefined' is not assignable to type 'Tool[]'.
-  Type 'undefined' is not assignable to type 'Tool[]'.
-src/providers/gemini/gemini-client.service.ts(76,30): error TS18048: 'content.parts' is possibly 'undefined'.
