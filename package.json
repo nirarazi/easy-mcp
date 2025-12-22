@@ -49,13 +49,23 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "peerDependencies": {
     "@google/genai": "^1.32.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "firebase": "^12.6.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "firebase": "^12.6.0"
+  },
+  "peerDependenciesMeta": {
+    "firebase": {
+      "optional": true
+    },
+    "@google/genai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
