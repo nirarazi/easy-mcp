@@ -8,35 +8,23 @@ import {
   createJsonRpcError,
   JsonRpcErrorCode,
 } from "./jsonrpc.interface";
+import { MAX_MESSAGE_SIZE_BYTES, MAX_CONTENT_LENGTH } from "../config/constants";
+import { logger } from "../core/utils/logger.util";
+import { sanitizeErrorMessage } from "../core/utils/sanitize.util";
 import * as readline from "readline";
-
-/**
- * Sanitizes error messages to prevent sensitive data exposure.
- * Removes stack traces and limits message length.
- */
-function sanitizeErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    // Remove stack traces and internal details
-    const message = error.message;
-    // Limit message length to prevent information leakage
-    const maxLength = 200;
-    if (message.length > maxLength) {
-      return message.substring(0, maxLength) + "...";
-    }
-    return message;
-  }
-  return "An error occurred";
-}
 
 @Injectable()
 export class StdioGatewayService implements IInterfaceLayer {
   private mcpServerService: McpServerService;
   private rl: readline.Interface;
   private isRunning = false;
-  private buffer = "";
+  private pendingContentLength: number | null = null;
+  private messageBuffer: Buffer = Buffer.alloc(0);
 
   constructor() {
-    console.error("[Layer 1: Interface] StdioGatewayService initialized.");
+    logger.info("StdioGatewayService", "StdioGatewayService initialized", {
+      component: "Layer 1: Interface",
+    });
   }
 
   /**
@@ -53,14 +41,22 @@ export class StdioGatewayService implements IInterfaceLayer {
    */
   public async start(): Promise<void> {
     if (this.isRunning) {
-      console.error("[Layer 1] StdioGatewayService is already running.");
+      logger.warn("StdioGatewayService", "StdioGatewayService is already running", {
+        component: "Layer 1",
+      });
       return;
     }
 
-    console.error("[Layer 1] Starting stdio JSON-RPC server...");
-    console.error("[Layer 1] Server is running and listening for JSON-RPC requests.");
+    logger.info("StdioGatewayService", "Starting stdio JSON-RPC server", {
+      component: "Layer 1",
+    });
+    logger.info("StdioGatewayService", "Server is running and listening for JSON-RPC requests", {
+      component: "Layer 1",
+    });
 
     this.isRunning = true;
+    this.pendingContentLength = null;
+    this.messageBuffer = Buffer.alloc(0);
 
     // Create readline interface for reading from stdin line by line
     this.rl = readline.createInterface({
@@ -70,42 +66,20 @@ export class StdioGatewayService implements IInterfaceLayer {
     });
 
     // Process messages using Content-Length framing (MCP protocol standard)
-    this.rl.on("line", async (line: string) => {
-      if (!line.trim()) {
-        return; // Skip empty lines
-      }
-
-      // Check for Content-Length header
-      const contentLengthMatch = line.match(/^Content-Length:\s*(\d+)/i);
-      if (contentLengthMatch) {
-        const contentLength = parseInt(contentLengthMatch[1], 10);
-        
-        // Read the next line which should be the JSON-RPC message
-        this.rl.once("line", async (body: string) => {
-          // Ensure we read exactly the specified length
-          const message = body.substring(0, contentLength);
-          
-          try {
-            await this.processRequest(message);
-          } catch (error) {
-            console.error("[Layer 1] Error processing request:", sanitizeErrorMessage(error));
-          }
+    this.rl.on("line", (line: string) => {
+      this.handleLine(line).catch((error) => {
+        logger.error("StdioGatewayService", "Error handling line", {
+          component: "Layer 1",
+          error: sanitizeErrorMessage(error),
         });
-        return;
-      }
-
-      // Fallback: try to parse as direct JSON (for backwards compatibility)
-      // This handles cases where Content-Length header is not used
-      try {
-        await this.processRequest(line);
-      } catch (error) {
-        console.error("[Layer 1] Error processing request:", sanitizeErrorMessage(error));
-      }
+      });
     });
 
     // Handle stdin close
     this.rl.on("close", () => {
-      console.error("[Layer 1] stdin closed, shutting down...");
+      logger.info("StdioGatewayService", "stdin closed, shutting down", {
+        component: "Layer 1",
+      });
       this.isRunning = false;
     });
 
@@ -120,11 +94,103 @@ export class StdioGatewayService implements IInterfaceLayer {
   }
 
   /**
+   * Handles a single line from stdin.
+   * Implements Content-Length framing with proper multi-line JSON support.
+   */
+  private async handleLine(line: string): Promise<void> {
+    // If we're waiting for a message body, accumulate bytes
+    if (this.pendingContentLength !== null) {
+      const lineBytes = Buffer.from(line + "\n", "utf8");
+      this.messageBuffer = Buffer.concat([this.messageBuffer, lineBytes]);
+
+      // Check if we've read enough bytes
+      if (this.messageBuffer.length >= this.pendingContentLength) {
+        const messageBytes = this.messageBuffer.subarray(0, this.pendingContentLength);
+        const message = messageBytes.toString("utf8");
+        
+        // Reset state
+        this.pendingContentLength = null;
+        this.messageBuffer = Buffer.alloc(0);
+
+        // Process the complete message
+        await this.processRequest(message);
+      }
+      return;
+    }
+
+    // Skip empty lines
+    if (!line.trim()) {
+      return;
+    }
+
+    // Check for Content-Length header
+    const contentLengthMatch = line.match(/^Content-Length:\s*(\d+)/i);
+    if (contentLengthMatch) {
+      const contentLength = parseInt(contentLengthMatch[1], 10);
+
+      // Validate Content-Length value
+      if (isNaN(contentLength) || contentLength < 0) {
+        logger.error("StdioGatewayService", "Invalid Content-Length value", {
+          component: "Layer 1",
+          contentLength: contentLengthMatch[1],
+        });
+        return;
+      }
+
+      // Enforce maximum message size to prevent memory exhaustion
+      if (contentLength > MAX_CONTENT_LENGTH) {
+        logger.error("StdioGatewayService", "Content-Length exceeds maximum allowed size", {
+          component: "Layer 1",
+          contentLength,
+          maxAllowed: MAX_CONTENT_LENGTH,
+        });
+        // Reset state to prevent hanging
+        this.pendingContentLength = null;
+        this.messageBuffer = Buffer.alloc(0);
+        return;
+      }
+
+      // Start accumulating message bytes
+      this.pendingContentLength = contentLength;
+      this.messageBuffer = Buffer.alloc(0);
+      return;
+    }
+
+    // Fallback: try to parse as direct JSON (for backwards compatibility)
+    // This handles cases where Content-Length header is not used
+    // But we still enforce size limits
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    if (lineBytes > MAX_MESSAGE_SIZE_BYTES) {
+      logger.error("StdioGatewayService", "Unframed message exceeds maximum size", {
+        component: "Layer 1",
+        messageSize: lineBytes,
+        maxAllowed: MAX_MESSAGE_SIZE_BYTES,
+      });
+      return;
+    }
+
+    await this.processRequest(line);
+  }
+
+  /**
    * Processes a JSON-RPC request message.
+   * Validates message size and handles parsing errors securely.
    */
   private async processRequest(message: string): Promise<void> {
     if (!message.trim()) {
       return; // Skip empty messages
+    }
+
+    // Validate message size (in bytes)
+    const messageSize = Buffer.byteLength(message, "utf8");
+    if (messageSize > MAX_MESSAGE_SIZE_BYTES) {
+      logger.error("StdioGatewayService", "Message exceeds maximum allowed size", {
+        component: "Layer 1",
+        messageSize,
+        maxAllowed: MAX_MESSAGE_SIZE_BYTES,
+      });
+      // Cannot respond without a valid request ID
+      return;
     }
 
     let request: any = null;
@@ -134,7 +200,10 @@ export class StdioGatewayService implements IInterfaceLayer {
     } catch (error) {
       // Per JSON-RPC 2.0 spec: Parse errors should not send a response if ID is unknown
       // Since we can't parse the request, we don't know the ID, so we don't respond
-      console.error("[Layer 1] JSON Parse Error:", sanitizeErrorMessage(error));
+      logger.error("StdioGatewayService", "JSON Parse Error", {
+        component: "Layer 1",
+        error: sanitizeErrorMessage(error),
+      });
       return;
     }
 
@@ -150,6 +219,10 @@ export class StdioGatewayService implements IInterfaceLayer {
       if (requestId !== null && requestId !== undefined) {
         this.sendResponse(errorResponse);
       }
+      logger.warn("StdioGatewayService", "Invalid JSON-RPC request structure", {
+        component: "Layer 1",
+        requestId,
+      });
       return;
     }
 
@@ -157,7 +230,7 @@ export class StdioGatewayService implements IInterfaceLayer {
       // Handle the valid request
       const response = await this.handleRequest(request);
       this.sendResponse(response);
-    } catch (error) {
+    } catch (err) {
       // Handle internal errors during request processing
       const errorResponse = createJsonRpcError(
         request.id,
@@ -166,19 +239,26 @@ export class StdioGatewayService implements IInterfaceLayer {
       );
       this.sendResponse(errorResponse);
       // Log the actual error to stderr for debugging (not sent to client)
-      console.error("[Layer 1] Internal error:", sanitizeErrorMessage(error));
+      logger.error("StdioGatewayService", "Internal error during request handling", {
+        component: "Layer 1",
+        requestId: request.id,
+        method: request.method,
+        error: sanitizeErrorMessage(err),
+      });
     }
   }
 
   /**
    * Sends a JSON-RPC response to stdout
    */
-  public async sendMessage(sessionId: string, output: any): Promise<void> {
+  public async sendMessage(sessionId: string, _output: unknown): Promise<void> {
     // This method is part of IInterfaceLayer but not used in stdio mode
     // Responses are sent directly via sendResponse()
-    console.error(
-      `[Layer 1] sendMessage() called with sessionId=${sessionId}, but stdio mode doesn't use sessions`,
-    );
+    // eslint-disable-next-line @typescript-eslint/require-await
+    logger.warn("StdioGatewayService", "sendMessage() called but stdio mode doesn't use sessions", {
+      component: "Layer 1",
+      sessionId,
+    });
   }
 
   /**
@@ -197,7 +277,13 @@ export class StdioGatewayService implements IInterfaceLayer {
 
     try {
       return await this.mcpServerService.handleRequest(request);
-    } catch (error) {
+    } catch (err) {
+      // Log error for debugging but don't expose details to client
+      logger.error("StdioGatewayService", "Error in handleRequest", {
+        component: "Layer 1",
+        requestId: request.id,
+        error: sanitizeErrorMessage(err),
+      });
       // Sanitize error message before returning
       return createJsonRpcError(
         request.id,
@@ -226,7 +312,11 @@ export class StdioGatewayService implements IInterfaceLayer {
       this.rl.close();
     }
     this.isRunning = false;
-    console.error("[Layer 1] StdioGatewayService shut down.");
+    this.pendingContentLength = null;
+    this.messageBuffer = Buffer.alloc(0);
+    logger.info("StdioGatewayService", "StdioGatewayService shut down", {
+      component: "Layer 1",
+    });
   }
 }
 

@@ -7,6 +7,8 @@ import { McpServerService } from "./core/mcp-server/mcp-server.service"; // Assu
 import { ConfigHolderService } from "./config/config-holder.service";
 import { ConfigValidator } from "./config/config-validator";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
+import { logger } from "./core/utils/logger.util";
+import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
 
@@ -20,7 +22,9 @@ export class EasyMCP {
    */
   public static async initialize(config: McpConfig): Promise<void> {
     if (this.app) {
-      console.warn("EasyMCP is already initialized.");
+      logger.warn("EasyMCP", "EasyMCP is already initialized", {
+        component: "EasyMCP",
+      });
       return;
     }
 
@@ -47,10 +51,15 @@ export class EasyMCP {
           throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
         }
       }
-      console.error(`Registered ${config.tools.length} tool(s) from configuration.`);
+      logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
+        component: "EasyMCP",
+        toolCount: config.tools.length,
+      });
     }
 
-    console.error("EasyMCP Framework initialized successfully.");
+    logger.info("EasyMCP", "EasyMCP Framework initialized successfully", {
+      component: "EasyMCP",
+    });
   }
 
   /**
@@ -64,7 +73,9 @@ export class EasyMCP {
       );
     }
 
-    console.error("Starting EasyMCP core services...");
+    logger.info("EasyMCP", "Starting EasyMCP core services", {
+      component: "EasyMCP",
+    });
 
     try {
       // Retrieve the central orchestration service (Layer 3: Abstraction Core)
@@ -73,11 +84,14 @@ export class EasyMCP {
       // Start listening for JSON-RPC requests via stdio
       await mcpServer.startListening();
 
-      console.error(
-        "EasyMCP core services are now running and listening for JSON-RPC requests via stdio.",
-      );
+      logger.info("EasyMCP", "EasyMCP core services are now running and listening for JSON-RPC requests via stdio", {
+        component: "EasyMCP",
+      });
     } catch (error) {
-      console.error("Failed to start EasyMCP core services:", error);
+      logger.error("EasyMCP", "Failed to start EasyMCP core services", {
+        component: "EasyMCP",
+        error: sanitizeErrorMessage(error),
+      });
       // Optionally close the application context on failure
       await this.app.close();
       throw error;
@@ -103,18 +117,27 @@ export class EasyMCP {
    */
   public static async shutdown(): Promise<void> {
     if (!this.app) {
-      console.warn("EasyMCP is not initialized. Nothing to shutdown.");
+      logger.warn("EasyMCP", "EasyMCP is not initialized. Nothing to shutdown", {
+        component: "EasyMCP",
+      });
       return;
     }
 
-    console.error("Shutting down EasyMCP framework...");
+    logger.info("EasyMCP", "Shutting down EasyMCP framework", {
+      component: "EasyMCP",
+    });
 
     try {
       await this.app.close();
       this.app = null as any; // Clear the reference
-      console.error("EasyMCP framework shut down successfully.");
+      logger.info("EasyMCP", "EasyMCP framework shut down successfully", {
+        component: "EasyMCP",
+      });
     } catch (error) {
-      console.error("Error during EasyMCP shutdown:", error);
+      logger.error("EasyMCP", "Error during EasyMCP shutdown", {
+        component: "EasyMCP",
+        error: sanitizeErrorMessage(error),
+      });
       throw error;
     }
   }

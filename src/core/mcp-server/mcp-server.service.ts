@@ -23,6 +23,8 @@ import { ToolNotFoundError, ToolExecutionError } from "../errors/easy-mcp-error"
 import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
 import { validateToolArguments } from "../utils/schema-validator";
+import { logger } from "../utils/logger.util";
+import { sanitizeToolArgs, sanitizeToolResult } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -45,20 +47,22 @@ export class McpServerService implements OnModuleInit {
 
   onModuleInit() {
     this.stdioGatewayService.setMcpServerService(this);
-    console.error("[Layer 3] Circular dependency resolved.");
+    logger.info("McpServerService", "Circular dependency resolved", {
+      component: "Layer 3",
+    });
   }
 
   /**
    * Implements the startListening() method by delegating network startup to Layer 1.
    */
   public async startListening(): Promise<void> {
-    console.error(
-      `[Layer 3: Abstraction Core] Initiating Layer 1 Interface startup...`,
-    );
+    logger.info("McpServerService", "Initiating Layer 1 Interface startup", {
+      component: "Layer 3: Abstraction Core",
+    });
     await this.interfaceLayer.start();
-    console.error(
-      `[Layer 3] McpServerService is operational and awaiting Layer 1 input.`,
-    );
+    logger.info("McpServerService", "McpServerService is operational and awaiting Layer 1 input", {
+      component: "Layer 3",
+    });
   }
 
   /**
@@ -68,14 +72,38 @@ export class McpServerService implements OnModuleInit {
     request: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
     try {
+      let response: JsonRpcResponse;
       switch (request.method) {
         case "initialize":
-          return this.handleInitialize(request);
+          response = await this.handleInitialize(request);
+          logger.audit(
+            "McpServerService",
+            "initialize",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+          );
+          return response;
         case "tools/list":
-          return this.handleListTools(request);
+          response = await this.handleListTools(request);
+          logger.audit(
+            "McpServerService",
+            "tools/list",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+          );
+          return response;
         case "tools/call":
-          return this.handleCallTool(request);
+          response = await this.handleCallTool(request);
+          // Audit logging for tools/call is done inside handleCallTool for more detail
+          return response;
         default:
+          logger.warn("McpServerService", "Method not found", {
+            component: "Layer 3",
+            method: request.method,
+            requestId: request.id,
+          });
           return createJsonRpcError(
             request.id,
             JsonRpcErrorCode.MethodNotFound,
@@ -83,10 +111,17 @@ export class McpServerService implements OnModuleInit {
           );
       }
     } catch (error) {
+      logger.error("McpServerService", "Unhandled error in handleRequest", {
+        component: "Layer 3",
+        method: request.method,
+        requestId: request.id,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      // Never expose internal error details to client
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InternalError,
-        error instanceof Error ? error.message : "Internal error",
+        "Internal error",
       );
     }
   }
@@ -143,6 +178,7 @@ export class McpServerService implements OnModuleInit {
   /**
    * Handles the tools/call request.
    * Executes the requested tool and returns the result.
+   * Includes comprehensive audit logging for security and compliance.
    */
   private async handleCallTool(
     request: JsonRpcRequest,
@@ -150,6 +186,13 @@ export class McpServerService implements OnModuleInit {
     const params = request.params as CallToolParams | undefined;
 
     if (!params) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        { reason: "Missing params", method: request.method },
+        request.id,
+      );
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
@@ -158,6 +201,13 @@ export class McpServerService implements OnModuleInit {
     }
 
     if (!params.name || typeof params.name !== "string") {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        { reason: "Missing or invalid tool name", method: request.method },
+        request.id,
+      );
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
@@ -165,24 +215,49 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    const toolName = params.name;
+    const args = params.arguments || {};
+
     // Get tool definition for schema validation
-    const tool = this.toolRegistry.getTool(params.name);
+    const tool = this.toolRegistry.getTool(toolName);
     if (!tool) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Tool not found",
+          toolName,
+          method: request.method,
+        },
+        request.id,
+      );
       return createJsonRpcError(
         request.id,
         McpErrorCode.ToolNotFound,
-        `Tool not found: ${params.name}`,
+        "Tool not found",
       );
     }
 
     // Validate arguments against tool schema
-    const args = params.arguments || {};
     const validationError = validateToolArguments(
       args,
       tool.parameters,
       tool.required,
     );
     if (validationError) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Invalid arguments",
+          toolName,
+          validationError,
+          method: request.method,
+        },
+        request.id,
+      );
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
@@ -191,38 +266,62 @@ export class McpServerService implements OnModuleInit {
     }
 
     try {
-      const toolResult = await this.toolRegistry.executeTool(
-        params.name,
-        args,
+      // Audit log: Tool execution started
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "success",
+        {
+          toolName,
+          sanitizedArgs: sanitizeToolArgs(args),
+          method: request.method,
+        },
+        request.id,
       );
 
-      // Convert tool result to MCP format
+      const toolResult = await this.toolRegistry.executeTool(toolName, args);
+
       // Sanitize result to prevent sensitive data exposure
-      let resultText: string;
-      if (typeof toolResult === "string") {
-        resultText = toolResult;
-      } else {
-        try {
-          resultText = JSON.stringify(toolResult);
-        } catch (error) {
-          resultText = "[Result could not be serialized]";
-        }
-      }
+      const sanitizedResult = sanitizeToolResult(toolResult);
 
       const result: CallToolResult = {
         content: [
           {
             type: "text",
-            text: resultText,
+            text: sanitizedResult,
           },
         ],
         isError: false,
       };
 
+      // Audit log: Tool execution completed successfully
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "success",
+        {
+          toolName,
+          resultSize: sanitizedResult.length,
+          method: request.method,
+        },
+        request.id,
+      );
+
       return createJsonRpcSuccess(request.id, result);
     } catch (error) {
       // Handle tool-specific errors
       if (error instanceof ToolNotFoundError) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolNotFoundError",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+        );
         return createJsonRpcError(
           request.id,
           McpErrorCode.ToolNotFound,
@@ -231,6 +330,17 @@ export class McpServerService implements OnModuleInit {
       }
 
       if (error instanceof ToolExecutionError) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolExecutionError",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+        );
         // Use JSON-RPC error instead of success with isError flag
         return createJsonRpcError(
           request.id,
@@ -239,7 +349,27 @@ export class McpServerService implements OnModuleInit {
         );
       }
 
-      // Unknown error - sanitize message
+      // Unknown error - log for debugging but don't expose details to client
+      logger.error("McpServerService", "Unknown error during tool execution", {
+        component: "Layer 3",
+        toolName,
+        requestId: request.id,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Unknown error",
+          toolName,
+          method: request.method,
+        },
+        request.id,
+      );
+
+      // Never expose internal error details to client
       return createJsonRpcError(
         request.id,
         McpErrorCode.ToolExecutionError,
