@@ -7,6 +7,8 @@ import { McpServerService } from "./core/mcp-server/mcp-server.service"; // Assu
 import { ConfigHolderService } from "./config/config-holder.service";
 import { ConfigValidator } from "./config/config-validator";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
+import { logger } from "./core/utils/logger.util";
+import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
 
@@ -20,7 +22,9 @@ export class EasyMCP {
    */
   public static async initialize(config: McpConfig): Promise<void> {
     if (this.app) {
-      console.warn("EasyMCP is already initialized.");
+      logger.warn("EasyMCP", "EasyMCP is already initialized", {
+        component: "EasyMCP",
+      });
       return;
     }
 
@@ -47,16 +51,20 @@ export class EasyMCP {
           throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
         }
       }
-      console.log(`Registered ${config.tools.length} tool(s) from configuration.`);
+      logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
+        component: "EasyMCP",
+        toolCount: config.tools.length,
+      });
     }
 
-    console.log("EasyMCP Framework initialized successfully.");
+    logger.info("EasyMCP", "EasyMCP Framework initialized successfully", {
+      component: "EasyMCP",
+    });
   }
 
   /**
    * Starts the core logic of the Easy MCP Framework.
-   * This typically involves starting the layer that handles incoming messages (Layer 1/3).
-   * * FIX: Defined as a static method to resolve the TS2339 error in src/main.ts.
+   * This starts the stdio JSON-RPC server to handle MCP protocol requests.
    */
   public static async run(): Promise<void> {
     if (!this.app) {
@@ -65,23 +73,25 @@ export class EasyMCP {
       );
     }
 
-    console.log("Starting EasyMCP core services...");
+    logger.info("EasyMCP", "Starting EasyMCP core services", {
+      component: "EasyMCP",
+    });
 
     try {
       // Retrieve the central orchestration service (Layer 3: Abstraction Core)
-      // Assuming McpServerService is the main entry point for protocol handling
       const mcpServer = this.app.get(McpServerService);
 
-      // Assume the main service has a method to start listening for client messages
-      // This is where the WebSocket or HTTP listener would typically be initialized.
-      // Replace with your actual startup method if it differs.
+      // Start listening for JSON-RPC requests via stdio
       await mcpServer.startListening();
 
-      console.log(
-        "EasyMCP core services are now running and listening for client connections.",
-      );
+      logger.info("EasyMCP", "EasyMCP core services are now running and listening for JSON-RPC requests via stdio", {
+        component: "EasyMCP",
+      });
     } catch (error) {
-      console.error("Failed to start EasyMCP core services:", error);
+      logger.error("EasyMCP", "Failed to start EasyMCP core services", {
+        component: "EasyMCP",
+        error: sanitizeErrorMessage(error),
+      });
       // Optionally close the application context on failure
       await this.app.close();
       throw error;
@@ -107,18 +117,27 @@ export class EasyMCP {
    */
   public static async shutdown(): Promise<void> {
     if (!this.app) {
-      console.warn("EasyMCP is not initialized. Nothing to shutdown.");
+      logger.warn("EasyMCP", "EasyMCP is not initialized. Nothing to shutdown", {
+        component: "EasyMCP",
+      });
       return;
     }
 
-    console.log("Shutting down EasyMCP framework...");
+    logger.info("EasyMCP", "Shutting down EasyMCP framework", {
+      component: "EasyMCP",
+    });
 
     try {
       await this.app.close();
       this.app = null as any; // Clear the reference
-      console.log("EasyMCP framework shut down successfully.");
+      logger.info("EasyMCP", "EasyMCP framework shut down successfully", {
+        component: "EasyMCP",
+      });
     } catch (error) {
-      console.error("Error during EasyMCP shutdown:", error);
+      logger.error("EasyMCP", "Error during EasyMCP shutdown", {
+        component: "EasyMCP",
+        error: sanitizeErrorMessage(error),
+      });
       throw error;
     }
   }

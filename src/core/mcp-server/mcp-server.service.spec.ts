@@ -1,41 +1,79 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { McpServerService } from "./mcp-server.service";
-// Import all external dependencies and tokens
-import { LlmProviderService } from "../../providers/llm-provider/llm-provider.service";
 import { ToolRegistryService } from "../../tooling/tool-registry/tool-registry.service";
+import { INTERFACE_LAYER_TOKEN, CONFIG_TOKEN } from "../../config/constants";
+import { StdioGatewayService } from "../../interface/stdio-gateway.service";
+import { IInterfaceLayer } from "../../interface/interface.interface";
 import {
-  INTERFACE_LAYER_TOKEN,
-  MEMORY_SERVICE_TOKEN,
-  SYSTEM_INSTRUCTION_TOKEN,
-} from "../../config/constants";
-import { WebSocketGatewayService } from "../../interface/websocket-gateway.service";
-import { IMemoryService } from "../../memory/memory.interface";
-import { McpMessageInput } from "../../interface/mcp.interface";
-import { ConversationTurn } from "../../memory/memory.interface";
-import { McpOutput } from "../../interface/mcp.interface";
+  JsonRpcRequest,
+  JsonRpcErrorCode,
+} from "../../interface/jsonrpc.interface";
+import { ConfigHolderService } from "../../config/config-holder.service";
+import { McpConfig } from "../../config/mcp-config.interface";
 
 describe("McpServerService", () => {
   let service: McpServerService;
-  let llmProvider: jest.Mocked<LlmProviderService>;
   let toolRegistry: jest.Mocked<ToolRegistryService>;
-  let memoryService: jest.Mocked<IMemoryService>;
-  let webSocketGateway: jest.Mocked<WebSocketGatewayService>;
+  let interfaceLayer: jest.Mocked<IInterfaceLayer>;
+  let stdioGateway: jest.Mocked<StdioGatewayService>;
+  let configHolder: jest.Mocked<ConfigHolderService>;
+
+  const mockConfig: McpConfig = {
+    tools: [
+      {
+        name: "testTool",
+        description: "A test tool",
+        function: async () => "result",
+        inputSchema: {
+          type: "OBJECT",
+          properties: {
+            param: {
+              type: "STRING",
+              description: "A parameter",
+            },
+          },
+          required: ["param"],
+        },
+      },
+    ],
+  };
 
   beforeEach(async () => {
-    // Create mocks with proper methods
-    const mockLlmProvider = {
-      generateContent: jest.fn(),
+    const mockTool = {
+      name: "testTool",
+      description: "A test tool",
+      execute: jest.fn(),
+      parameters: {
+        param: {
+          type: "string" as const,
+          description: "A parameter",
+        },
+      },
+      required: ["param"],
     };
 
     const mockToolRegistry = {
-      getToolsAsRegistrationInput: jest.fn().mockReturnValue([]),
+      getToolSchemasForLLM: jest.fn().mockReturnValue([
+        {
+          type: "function",
+          function: {
+            name: "testTool",
+            description: "A test tool",
+            parameters: {
+              type: "object",
+              properties: {
+                param: {
+                  type: "string",
+                  description: "A parameter",
+                },
+              },
+              required: ["param"],
+            },
+          },
+        },
+      ]),
+      getTool: jest.fn().mockReturnValue(mockTool),
       executeTool: jest.fn(),
-    };
-
-    const mockMemoryService = {
-      getConversationHistory: jest.fn().mockResolvedValue([]),
-      getLongTermContext: jest.fn().mockResolvedValue([]),
-      addTurn: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockInterfaceLayer = {
@@ -43,160 +81,160 @@ describe("McpServerService", () => {
       sendMessage: jest.fn().mockResolvedValue(undefined),
     };
 
-    const mockWebSocketGateway = {
+    const mockStdioGateway = {
       setMcpServerService: jest.fn(),
+    };
+
+    const mockConfigHolder = {
+      getConfig: jest.fn().mockReturnValue(mockConfig),
+      setConfig: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         McpServerService,
-        { provide: LlmProviderService, useValue: mockLlmProvider },
         { provide: ToolRegistryService, useValue: mockToolRegistry },
         {
-          provide: WebSocketGatewayService,
-          useValue: mockWebSocketGateway,
+          provide: StdioGatewayService,
+          useValue: mockStdioGateway,
         },
-        { provide: MEMORY_SERVICE_TOKEN, useValue: mockMemoryService },
-        { provide: SYSTEM_INSTRUCTION_TOKEN, useValue: "mock instruction" },
         { provide: INTERFACE_LAYER_TOKEN, useValue: mockInterfaceLayer },
+        { provide: CONFIG_TOKEN, useValue: mockConfigHolder },
       ],
     }).compile();
 
     service = module.get<McpServerService>(McpServerService);
-    llmProvider = module.get(LlmProviderService);
     toolRegistry = module.get(ToolRegistryService);
-    memoryService = module.get(MEMORY_SERVICE_TOKEN);
-    webSocketGateway = module.get(WebSocketGatewayService);
+    interfaceLayer = module.get(INTERFACE_LAYER_TOKEN);
+    stdioGateway = module.get(StdioGatewayService);
+    configHolder = module.get(CONFIG_TOKEN);
   });
 
   it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe("handleMessage", () => {
-    const mockInput: McpMessageInput = {
-      sessionId: "test-session",
-      text: "Hello, world!",
-    };
-
-    it("should handle a regular message without tool calls", async () => {
-      const mockResponse: McpOutput = {
-        response: "Hello! How can I help you?",
-        modelUsed: "gemini-1.5-flash",
-        tokenUsage: {
-          promptTokens: 10,
-          completionTokens: 5,
-          totalTokens: 15,
+  describe("handleRequest", () => {
+    it("should handle initialize request", async () => {
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
         },
       };
 
-      llmProvider.generateContent.mockResolvedValue(mockResponse);
+      const response = await service.handleRequest(request);
 
-      const result = await service.handleMessage(mockInput);
-
-      expect(result.sessionId).toBe("test-session");
-      expect(result.response).toBe("Hello! How can I help you?");
-      expect(result.action).toBeUndefined();
-      expect(memoryService.addTurn).toHaveBeenCalledWith(
-        "test-session",
-        "Hello, world!",
-        "Hello! How can I help you?",
-      );
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(1);
+      expect(response.result).toBeDefined();
+      expect(response.result.protocolVersion).toBe("2024-11-05");
+      expect(response.result.capabilities).toBeDefined();
+      expect(response.result.serverInfo).toBeDefined();
     });
 
-    it("should execute tool when LLM calls it", async () => {
-      const toolCallResponse: McpOutput = {
-        response: "",
-        modelUsed: "gemini-1.5-flash",
-        tokenUsage: {
-          promptTokens: 10,
-          completionTokens: 5,
-          totalTokens: 15,
-        },
-        toolCall: {
-          functionName: "testTool",
+    it("should handle tools/list request", async () => {
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+      };
+
+      const response = await service.handleRequest(request);
+
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(2);
+      expect(response.result).toBeDefined();
+      expect(response.result.tools).toBeDefined();
+      expect(Array.isArray(response.result.tools)).toBe(true);
+      expect(toolRegistry.getToolSchemasForLLM).toHaveBeenCalled();
+    });
+
+    it("should handle tools/call request", async () => {
+      toolRegistry.executeTool.mockResolvedValue("tool result");
+
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "testTool",
           arguments: { param: "value" },
         },
       };
 
-      const followUpResponse: McpOutput = {
-        response: "Tool executed successfully!",
-        modelUsed: "gemini-1.5-flash",
-        tokenUsage: {
-          promptTokens: 20,
-          completionTokens: 10,
-          totalTokens: 30,
-        },
-      };
+      const response = await service.handleRequest(request);
 
-      llmProvider.generateContent
-        .mockResolvedValueOnce(toolCallResponse)
-        .mockResolvedValueOnce(followUpResponse);
-
-      toolRegistry.executeTool.mockResolvedValue("tool result");
-
-      const result = await service.handleMessage(mockInput);
-
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(3);
+      expect(response.result).toBeDefined();
+      expect(response.result.content).toBeDefined();
       expect(toolRegistry.executeTool).toHaveBeenCalledWith("testTool", {
         param: "value",
       });
-      expect(result.response).toBe("Tool executed successfully!");
-      expect(llmProvider.generateContent).toHaveBeenCalledTimes(2);
     });
 
-    it("should handle tool execution errors gracefully", async () => {
-      const toolCallResponse: McpOutput = {
-        response: "",
-        modelUsed: "gemini-1.5-flash",
-        tokenUsage: {
-          promptTokens: 10,
-          completionTokens: 5,
-          totalTokens: 15,
-        },
-        toolCall: {
-          functionName: "testTool",
-          arguments: { param: "value" },
-        },
+    it("should handle unknown method", async () => {
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "unknown/method",
       };
 
-      llmProvider.generateContent.mockResolvedValue(toolCallResponse);
-      toolRegistry.executeTool.mockRejectedValue(new Error("Tool execution failed"));
+      const response = await service.handleRequest(request);
 
-      const result = await service.handleMessage(mockInput);
-
-      expect(result.response).toContain("Error executing tool");
-      expect(result.action).toBeUndefined();
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(4);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(JsonRpcErrorCode.MethodNotFound);
     });
 
-    it("should handle multi-turn tool execution with toolResult", async () => {
-      const inputWithToolResult: McpMessageInput = {
-        sessionId: "test-session",
-        text: "",
-        toolResult: {
+    it("should handle tool execution errors", async () => {
+      const { ToolExecutionError } = require("../errors/easy-mcp-error");
+      toolRegistry.executeTool.mockRejectedValue(
+        new ToolExecutionError("Tool failed", "testTool"),
+      );
+
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: {
           name: "testTool",
-          result: "tool execution result",
+          arguments: { param: "value" }, // Provide required parameter
         },
       };
 
-      const followUpResponse: McpOutput = {
-        response: "Based on the tool result, here's the answer.",
-        modelUsed: "gemini-1.5-flash",
-        tokenUsage: {
-          promptTokens: 20,
-          completionTokens: 10,
-          totalTokens: 30,
+      const response = await service.handleRequest(request);
+
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(5);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(-32002); // McpErrorCode.ToolExecutionError
+    });
+
+    it("should handle tool not found errors", async () => {
+      const { ToolNotFoundError } = require("../errors/easy-mcp-error");
+      toolRegistry.getTool.mockReturnValue(undefined); // Tool not found
+
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: {
+          name: "testTool",
+          arguments: {},
         },
       };
 
-      llmProvider.generateContent.mockResolvedValue(followUpResponse);
+      const response = await service.handleRequest(request);
 
-      const result = await service.handleMessage(inputWithToolResult);
-
-      expect(result.response).toBe("Based on the tool result, here's the answer.");
-      expect(llmProvider.generateContent).toHaveBeenCalledTimes(1);
-      // Verify tool result was added to conversation
-      const callArgs = llmProvider.generateContent.mock.calls[0][0];
-      expect(callArgs.some((turn) => turn.role === "tool")).toBe(true);
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(6);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(-32001); // McpErrorCode.ToolNotFound
     });
   });
 });

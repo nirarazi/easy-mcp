@@ -16,88 +16,27 @@ export class ConfigValidator {
       throw new ConfigurationError('Configuration object is required');
     }
 
-    // Validate LLM Provider Config
-    this.validateLlmProvider(config.llmProvider);
-
-    // Validate Persistence Config
-    this.validatePersistence(config.persistence);
-
-    // Validate LTM Config
-    this.validateLTM(config.ltmConfig);
-
     // Validate Tools
-    if (config.tools && Array.isArray(config.tools)) {
-      config.tools.forEach((tool, index) => {
-        this.validateTool(tool, index);
-      });
-    }
-  }
-
-  /**
-   * Validates the LLM provider configuration.
-   */
-  private static validateLlmProvider(config: McpConfig['llmProvider']): void {
-    if (!config) {
-      throw new ConfigurationError('llmProvider configuration is required');
+    if (!config.tools || !Array.isArray(config.tools)) {
+      throw new ConfigurationError('tools must be a non-empty array');
     }
 
-    if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim().length === 0) {
-      throw new ConfigurationError('llmProvider.apiKey must be a non-empty string');
+    if (config.tools.length === 0) {
+      throw new ConfigurationError('At least one tool must be provided');
     }
 
-    if (!config.model || typeof config.model !== 'string' || config.model.trim().length === 0) {
-      throw new ConfigurationError('llmProvider.model must be a non-empty string');
-    }
+    config.tools.forEach((tool, index) => {
+      this.validateTool(tool, index);
+    });
 
-    if (!config.systemInstruction || typeof config.systemInstruction !== 'string') {
-      throw new ConfigurationError('llmProvider.systemInstruction must be a string');
-    }
-  }
-
-  /**
-   * Validates the persistence configuration.
-   */
-  private static validatePersistence(config: McpConfig['persistence']): void {
-    if (!config) {
-      throw new ConfigurationError('persistence configuration is required');
-    }
-
-    if (config.type !== 'FIRESTORE') {
-      throw new ConfigurationError(`Unsupported persistence type: ${config.type}. Only 'FIRESTORE' is currently supported.`);
-    }
-
-    if (!config.appId || typeof config.appId !== 'string' || config.appId.trim().length === 0) {
-      throw new ConfigurationError('persistence.appId must be a non-empty string');
-    }
-
-    // config.config is optional for Firestore, but if provided should be an object
-    if (config.config !== undefined && (typeof config.config !== 'object' || config.config === null || Array.isArray(config.config))) {
-      throw new ConfigurationError('persistence.config must be an object if provided');
-    }
-  }
-
-  /**
-   * Validates the LTM (Long-Term Memory) configuration.
-   */
-  private static validateLTM(config: McpConfig['ltmConfig']): void {
-    if (!config) {
-      throw new ConfigurationError('ltmConfig configuration is required');
-    }
-
-    if (!config.vectorDB) {
-      throw new ConfigurationError('ltmConfig.vectorDB is required');
-    }
-
-    if (!config.vectorDB.endpoint || typeof config.vectorDB.endpoint !== 'string' || config.vectorDB.endpoint.trim().length === 0) {
-      throw new ConfigurationError('ltmConfig.vectorDB.endpoint must be a non-empty string');
-    }
-
-    if (!config.vectorDB.collectionName || typeof config.vectorDB.collectionName !== 'string' || config.vectorDB.collectionName.trim().length === 0) {
-      throw new ConfigurationError('ltmConfig.vectorDB.collectionName must be a non-empty string');
-    }
-
-    if (typeof config.retrievalK !== 'number' || config.retrievalK < 1) {
-      throw new ConfigurationError('ltmConfig.retrievalK must be a positive number');
+    // Validate serverInfo if provided
+    if (config.serverInfo) {
+      if (!config.serverInfo.name || typeof config.serverInfo.name !== 'string' || config.serverInfo.name.trim().length === 0) {
+        throw new ConfigurationError('serverInfo.name must be a non-empty string');
+      }
+      if (!config.serverInfo.version || typeof config.serverInfo.version !== 'string' || config.serverInfo.version.trim().length === 0) {
+        throw new ConfigurationError('serverInfo.version must be a non-empty string');
+      }
     }
   }
 

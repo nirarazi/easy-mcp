@@ -4,26 +4,23 @@ import { McpConfig } from './mcp-config.interface';
 
 describe('ConfigValidator', () => {
   const validConfig: McpConfig = {
-    persistence: {
-      type: 'FIRESTORE',
-      appId: 'test-app',
-      authToken: 'test-token',
-      config: {},
-    },
-    llmProvider: {
-      model: 'gemini-1.5-flash',
-      apiKey: 'test-api-key',
-      systemInstruction: 'You are a helpful assistant.',
-    },
-    ltmConfig: {
-      vectorDB: {
-        type: 'VECTOR_DB_SERVICE',
-        endpoint: 'https://example.com',
-        collectionName: 'test-collection',
+    tools: [
+      {
+        name: 'testTool',
+        description: 'A test tool',
+        function: async () => 'result',
+        inputSchema: {
+          type: 'OBJECT',
+          properties: {
+            param: {
+              type: 'STRING',
+              description: 'A parameter',
+            },
+          },
+          required: ['param'],
+        },
       },
-      retrievalK: 3,
-    },
-    tools: [],
+    ],
   };
 
   describe('validate', () => {
@@ -38,94 +35,60 @@ describe('ConfigValidator', () => {
     it('should throw ConfigurationError for undefined config', () => {
       expect(() => ConfigValidator.validate(undefined as any)).toThrow(ConfigurationError);
     });
-  });
 
-  describe('llmProvider validation', () => {
-    it('should throw if llmProvider is missing', () => {
-      const config = { ...validConfig, llmProvider: undefined as any };
+    it('should throw if tools array is missing', () => {
+      const config = { ...validConfig, tools: undefined as any };
       expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-      expect(() => ConfigValidator.validate(config)).toThrow('llmProvider');
+      expect(() => ConfigValidator.validate(config)).toThrow('tools');
     });
 
-    it('should throw if apiKey is missing', () => {
-      const config = { ...validConfig, llmProvider: { ...validConfig.llmProvider, apiKey: '' } };
+    it('should throw if tools array is empty', () => {
+      const config = { ...validConfig, tools: [] };
       expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-
-    it('should throw if model is missing', () => {
-      const config = { ...validConfig, llmProvider: { ...validConfig.llmProvider, model: '' } };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-
-    it('should throw if systemInstruction is missing', () => {
-      const config = { ...validConfig, llmProvider: { ...validConfig.llmProvider, systemInstruction: '' } };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
+      expect(() => ConfigValidator.validate(config)).toThrow('At least one tool');
     });
   });
 
-  describe('persistence validation', () => {
-    it('should throw if persistence is missing', () => {
-      const config = { ...validConfig, persistence: undefined as any };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-
-    it('should throw if appId is missing', () => {
-      const config = { ...validConfig, persistence: { ...validConfig.persistence, appId: '' } };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-
-    it('should throw if type is not FIRESTORE', () => {
-      const config = { ...validConfig, persistence: { ...validConfig.persistence, type: 'INVALID' as any } };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-  });
-
-  describe('ltmConfig validation', () => {
-    it('should throw if ltmConfig is missing', () => {
-      const config = { ...validConfig, ltmConfig: undefined as any };
-      expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
-    });
-
-    it('should throw if vectorDB endpoint is missing', () => {
+  describe('serverInfo validation', () => {
+    it('should pass validation if serverInfo is provided correctly', () => {
       const config = {
         ...validConfig,
-        ltmConfig: {
-          ...validConfig.ltmConfig,
-          vectorDB: { ...validConfig.ltmConfig.vectorDB, endpoint: '' },
+        serverInfo: {
+          name: 'my-server',
+          version: '1.0.0',
+        },
+      };
+      expect(() => ConfigValidator.validate(config)).not.toThrow();
+    });
+
+    it('should throw if serverInfo.name is missing', () => {
+      const config = {
+        ...validConfig,
+        serverInfo: {
+          name: '',
+          version: '1.0.0',
         },
       };
       expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
+      expect(() => ConfigValidator.validate(config)).toThrow('serverInfo.name');
     });
 
-    it('should throw if retrievalK is invalid', () => {
-      const config = { ...validConfig, ltmConfig: { ...validConfig.ltmConfig, retrievalK: 0 } };
+    it('should throw if serverInfo.version is missing', () => {
+      const config = {
+        ...validConfig,
+        serverInfo: {
+          name: 'my-server',
+          version: '',
+        },
+      };
       expect(() => ConfigValidator.validate(config)).toThrow(ConfigurationError);
+      expect(() => ConfigValidator.validate(config)).toThrow('serverInfo.version');
     });
   });
 
   describe('tool validation', () => {
     it('should validate tools with valid schema', () => {
-      const config = {
-        ...validConfig,
-        tools: [
-          {
-            name: 'testTool',
-            description: 'A test tool',
-            function: async () => 'result',
-            inputSchema: {
-              type: 'OBJECT',
-              properties: {
-                param: {
-                  type: 'STRING',
-                  description: 'A parameter',
-                },
-              },
-              required: ['param'],
-            },
-          },
-        ],
-      };
-      expect(() => ConfigValidator.validate(config)).not.toThrow();
+      expect(() => ConfigValidator.validate(validConfig)).not.toThrow();
     });
 
     it('should throw if tool name is missing', () => {
@@ -188,4 +151,3 @@ describe('ConfigValidator', () => {
     });
   });
 });
-

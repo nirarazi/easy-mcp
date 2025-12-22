@@ -1,7 +1,7 @@
 {
   "name": "easy-mcp-framework",
   "version": "0.1.0",
-  "description": "A NestJS-based framework for building Model Context Protocol (MCP) servers with LLM integration, tool execution, and memory management",
+  "description": "A NestJS-based framework for building standard Model Context Protocol (MCP) servers with tool execution via JSON-RPC 2.0",
   "author": "",
   "license": "MIT",
   "main": "dist/index.js",
@@ -24,14 +24,11 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "llm",
-    "ai",
+    "json-rpc",
     "nestjs",
     "framework",
-    "gemini",
     "tools",
-    "rag",
-    "vector-db"
+    "mcp-server"
   ],
   "homepage": "https://github.com/nirarazi/easy-mcp#readme",
   "scripts": {
@@ -53,19 +50,9 @@
     "rxjs": "^7.8.1"
   },
   "peerDependencies": {
-    "@google/genai": "^1.32.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
-    "@nestjs/platform-express": "^11.0.1",
-    "firebase": "^12.6.0"
-  },
-  "peerDependenciesMeta": {
-    "firebase": {
-      "optional": true
-    },
-    "@google/genai": {
-      "optional": true
-    }
+    "@nestjs/platform-express": "^11.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

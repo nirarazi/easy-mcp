@@ -14,7 +14,6 @@ The Claude Skills Server automatically:
 ## Prerequisites
 
 - Node.js 18+ and npm/pnpm/yarn
-- Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 - TypeScript knowledge (for understanding the code)
 
 ## Installation
@@ -32,14 +31,6 @@ pnpm install
 
 ```bash
 npm install @nestjs/common@^11.0.1 @nestjs/core@^11.0.1 @nestjs/platform-express@^11.0.1
-npm install @google/genai@^1.32.0
-```
-
-3. **Set up environment variables:**
-
-```bash
-cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
 ```
 
 ## SKILL.md File Format
@@ -119,15 +110,7 @@ Create a `.env` file (see `.env.example` for template):
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `GOOGLE_API_KEY` | Yes | - | Your Google Gemini API key |
 | `SKILLS_DIR` | No | `./skills` | Path to directory containing SKILL.md files |
-| `LLM_MODEL` | No | `gemini-1.5-flash` | Gemini model to use |
-| `SYSTEM_INSTRUCTION` | No | Default instruction | Custom system instruction |
-| `VECTOR_DB_ENDPOINT` | No | `https://your-vectordb.com` | VectorDB endpoint for RAG |
-| `VECTOR_DB_COLLECTION` | No | `documents` | VectorDB collection name |
-| `RETRIEVAL_K` | No | `3` | Number of documents to retrieve |
-| `FIREBASE_CONFIG` | No | - | Firebase config JSON string |
-| `FIREBASE_AUTH_TOKEN` | No | - | Firebase auth token |
 
 ## Running the Server
 

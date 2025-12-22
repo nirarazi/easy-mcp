@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { McpConfig } from "./mcp-config.interface";
+import { logger } from "../core/utils/logger.util";
 
 @Injectable()
 export class ConfigHolderService {
@@ -7,7 +8,10 @@ export class ConfigHolderService {
 
   public setConfig(config: McpConfig): void {
     this.config = config;
-    console.log("Configuration successfully loaded into ConfigHolderService.");
+    logger.info("ConfigHolderService", "Configuration successfully loaded into ConfigHolderService", {
+      component: "Config",
+      toolCount: config.tools?.length || 0,
+    });
   }
 
   public getConfig(): McpConfig {

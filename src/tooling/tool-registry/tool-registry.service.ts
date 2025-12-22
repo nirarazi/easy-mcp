@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { ToolDefinition, ToolParameter } from "../tool.interface";
 import { ToolRegistrationInput } from "../../config/mcp-config.interface";
 import { ToolNotFoundError, ToolExecutionError } from "../../core/errors/easy-mcp-error";
+import { logger } from "../../core/utils/logger.util";
 
 /**
  * Type representing a tool schema in the format expected by LLM providers.
@@ -33,7 +34,10 @@ export class ToolRegistryService {
       throw new Error(`Tool name '${definition.name}' already registered.`);
     }
     this.registry.set(definition.name, definition);
-    console.log(`Tool registered: ${definition.name}`);
+    logger.info("ToolRegistryService", `Tool registered: ${definition.name}`, {
+      component: "ToolRegistry",
+      toolName: definition.name,
+    });
   }
 
   /**

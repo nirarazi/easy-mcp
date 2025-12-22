@@ -1,242 +1,439 @@
 import { Injectable, Inject, OnModuleInit } from "@nestjs/common";
-import { LlmProviderService } from "../../providers/llm-provider/llm-provider.service";
 import { ToolRegistryService } from "../../tooling/tool-registry/tool-registry.service";
-import {
-  INTERFACE_LAYER_TOKEN,
-  MEMORY_SERVICE_TOKEN,
-  SYSTEM_INSTRUCTION_TOKEN,
-} from "../../config/constants";
-import { type IMemoryService } from "../../memory/memory.interface";
+import { INTERFACE_LAYER_TOKEN } from "../../config/constants";
 import { type IInterfaceLayer } from "../../interface/interface.interface";
-import { WebSocketGatewayService } from "../../interface/websocket-gateway.service";
-// Assuming the relative path is correct from this file's location
+import { StdioGatewayService } from "../../interface/stdio-gateway.service";
 import {
-  McpMessageInput,
-  McpMessageOutput,
-} from "../../interface/mcp.interface";
-import { ConversationTurn } from "../../memory/memory.interface";
-import { sanitizeToolArgs, sanitizeErrorMessage, sanitizeToolResult } from "../utils/sanitize.util";
+  JsonRpcRequest,
+  JsonRpcResponse,
+  createJsonRpcSuccess,
+  createJsonRpcError,
+  JsonRpcErrorCode,
+} from "../../interface/jsonrpc.interface";
+import {
+  InitializeParams,
+  InitializeResult,
+  ListToolsResult,
+  McpTool,
+  CallToolParams,
+  CallToolResult,
+  McpErrorCode,
+} from "../../interface/mcp-protocol.interface";
+import { ToolNotFoundError, ToolExecutionError } from "../errors/easy-mcp-error";
+import { CONFIG_TOKEN } from "../../config/constants";
+import { ConfigHolderService } from "../../config/config-holder.service";
+import { validateToolArguments } from "../utils/schema-validator";
+import { logger } from "../utils/logger.util";
+import { sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
+  // Store client identifier from initialize request for audit logging
+  private clientIdentifier: string = "stdio-client";
+
   constructor(
-    // Layer 4
-    private readonly llmProvider: LlmProviderService, // Layer 3
-    private readonly toolRegistry: ToolRegistryService, // Layer 2
-    @Inject(MEMORY_SERVICE_TOKEN)
-    private readonly memoryService: IMemoryService, // Config
-    @Inject(SYSTEM_INSTRUCTION_TOKEN)
-    private readonly systemInstruction: string, // Layer 1 Interface (Used to call start())
+    private readonly toolRegistry: ToolRegistryService,
     @Inject(INTERFACE_LAYER_TOKEN)
-    private readonly interfaceLayer: IInterfaceLayer, // Layer 1 Concrete (Used to set the dependency on itself)
-    private readonly webSocketGatewayService: WebSocketGatewayService,
-  ) {} // FIX: Resolves the dependency cycle by waiting for all services to be instantiated.
+    private readonly interfaceLayer: IInterfaceLayer,
+    private readonly stdioGatewayService: StdioGatewayService,
+    @Inject(CONFIG_TOKEN)
+    private readonly configHolder: ConfigHolderService,
+  ) {}
 
-  onModuleInit() {
-    this.webSocketGatewayService.setMcpServerService(this);
-    console.log("[Layer 3] Circular dependency resolved.");
-  } /**
-   * Implements the startListening() method by delegating network startup to Layer 1.
+  private getServerInfo() {
+    const config = this.configHolder.getConfig();
+    return config.serverInfo || {
+      name: "easy-mcp-framework",
+      version: "0.1.0",
+    };
+  }
+
+  /**
+   * Extracts actor identifier from request for audit logging.
+   * Uses clientInfo from initialize request if available, otherwise uses stored client identifier.
+   * 
+   * Note: The actor identifier is client-supplied and not authenticated/verified.
+   * This is acceptable for local stdio usage where the client process is trusted,
+   * but should not be relied upon for security-critical authorization decisions.
+   * For production deployments requiring strict access control, additional authentication
+   * mechanisms should be implemented at the transport layer or application level.
    */
-
-  public async startListening(): Promise<void> {
-    console.log(
-      `[Layer 3: Abstraction Core] Initiating Layer 1 Interface startup...`,
-    ); // Delegate the actual startup of the network listener to the Layer 1 component
-
-    await this.interfaceLayer.start();
-
-    console.log(
-      `[Layer 3] McpServerService is operational and awaiting Layer 1 input.`,
-    );
-  }   /**
-   * The core Model Context Protocol (MCP) logic (handleMessage).
-   * Handles both regular messages and multi-turn tool execution.
-   */
-  public async handleMessage(
-    input: McpMessageInput,
-  ): Promise<McpMessageOutput> {
-    const { sessionId, text: userMessage, toolResult } = input;
-
-    // --- 1. Retrieve Context (Layer 2) ---
-    const history = await this.memoryService.getConversationHistory(sessionId);
-    const ltmContext = await this.memoryService.getLongTermContext(
-      sessionId,
-      userMessage || "",
-    );
-
-    // --- 2. Handle Multi-Turn Tool Execution ---
-    // If toolResult is provided, this is a continuation after tool execution
-    if (toolResult) {
-      // Add tool result to conversation history
-      // Sanitize the result to prevent sensitive data exposure
-      const toolResultContent = sanitizeToolResult(toolResult.result);
-      
-      const toolResultTurn: ConversationTurn = {
-        role: "tool",
-        content: toolResultContent,
-        timestamp: new Date(),
-        toolResult: toolResultContent,
-      };
-
-      const contentsWithToolResult: ConversationTurn[] = [
-        ...history,
-        toolResultTurn,
-      ];
-
-      // Make follow-up LLM call with tool result
-      const availableTools = this.toolRegistry.getToolsAsRegistrationInput();
-      const llmResponse = await this.llmProvider.generateContent(
-        contentsWithToolResult,
-        availableTools,
-        this.systemInstruction,
-      );
-
-      // Update memory with the final response
-      const finalResponse = llmResponse.response || "Tool execution completed.";
-      await this.memoryService.addTurn(
-        sessionId,
-        `Tool result for ${toolResult.name}`,
-        finalResponse,
-      );
-
-      return {
-        sessionId,
-        response: finalResponse,
-        metadata: {
-          modelUsed: llmResponse.modelUsed,
-          tokenUsage: llmResponse.tokenUsage,
-        },
-      };
-    }
-
-    // --- 3. Regular Message Flow ---
-    // Assemble prompt with context
-    const promptWithContext =
-      ltmContext.length > 0
-        ? `CONTEXT:\n${ltmContext.join("\n")}\n\nUSER QUESTION: ${userMessage}`
-        : userMessage;
-
-    const contents: ConversationTurn[] = [
-      ...history,
-      { role: "user", content: promptWithContext, timestamp: new Date() },
-    ];
-
-    // --- 4. Call LLM (Layer 4) ---
-    const availableTools = this.toolRegistry.getToolsAsRegistrationInput();
-    const llmResponse = await this.llmProvider.generateContent(
-      contents,
-      availableTools,
-      this.systemInstruction,
-    );
-
-    // --- 5. Handle LLM Output (Text or Function Call) ---
-    let responseText = llmResponse.response;
-    const action: McpMessageOutput["action"] = undefined;
-
-    if (llmResponse.toolCall) {
-      // Sanitize tool arguments for logging
-      const sanitizedArgs = sanitizeToolArgs(llmResponse.toolCall.arguments);
-      const sanitizedArgsString = (() => {
-        try {
-          return JSON.stringify(sanitizedArgs);
-        } catch {
-          return '[tool args could not be serialized]';
-        }
-      })();
-      console.log(
-        `[Layer 3] LLM suggested tool call: ${llmResponse.toolCall.functionName}`,
-      );
-
-      try {
-        // Execute the tool
-        const toolResult = await this.toolRegistry.executeTool(
-          llmResponse.toolCall.functionName,
-          llmResponse.toolCall.arguments,
-        );
-
-        // Convert tool result to string for conversation history
-        // Sanitize the result to prevent sensitive data exposure
-        const toolResultString = sanitizeToolResult(toolResult);
-
-        // Add tool call and result to conversation history
-        // Use sanitized args in the content to prevent sensitive data exposure
-        const toolCallTurn: ConversationTurn = {
-          role: "tool",
-          content: `Tool ${llmResponse.toolCall.functionName} called with args: ${sanitizedArgsString}`,
-          timestamp: new Date(),
-          toolResult: toolResultString,
-        };
-
-        const toolResultTurn: ConversationTurn = {
-          role: "tool",
-          content: toolResultString,
-          timestamp: new Date(),
-          toolResult: toolResultString,
-        };
-
-        // Make follow-up LLM call with tool result
-        const contentsWithToolResult: ConversationTurn[] = [
-          ...contents,
-          toolCallTurn,
-          toolResultTurn,
-        ];
-
-        const followUpResponse = await this.llmProvider.generateContent(
-          contentsWithToolResult,
-          availableTools,
-          this.systemInstruction,
-        );
-
-        responseText = followUpResponse.response || `Tool '${llmResponse.toolCall.functionName}' executed successfully.`;
-        
-        // Update memory with both user message and final response
-        await this.memoryService.addTurn(sessionId, userMessage, responseText);
-
-        return {
-          sessionId,
-          response: responseText,
-          metadata: {
-            modelUsed: followUpResponse.modelUsed,
-            tokenUsage: {
-              promptTokens: (llmResponse.tokenUsage.promptTokens || 0) + (followUpResponse.tokenUsage.promptTokens || 0),
-              completionTokens: (llmResponse.tokenUsage.completionTokens || 0) + (followUpResponse.tokenUsage.completionTokens || 0),
-              totalTokens: (llmResponse.tokenUsage.totalTokens || 0) + (followUpResponse.tokenUsage.totalTokens || 0),
-            },
-          },
-        };
-      } catch (error) {
-        // Tool execution failed - sanitize error message to prevent sensitive data leakage
-        const sanitizedErrorMessage = sanitizeErrorMessage(error);
-        responseText = `Error executing tool '${llmResponse.toolCall.functionName}': ${sanitizedErrorMessage}`;
-        
-        // Still update memory with the error (sanitized)
-        await this.memoryService.addTurn(sessionId, userMessage, responseText);
-
-        // Don't return action details for failed tool execution
-        return {
-          sessionId,
-          response: responseText,
-          action: undefined,
-          metadata: {
-            modelUsed: llmResponse.modelUsed,
-            tokenUsage: llmResponse.tokenUsage,
-          },
-        };
+  private getActorIdentifier(request: JsonRpcRequest): string {
+    // For initialize requests, extract client identifier from clientInfo
+    if (request.method === "initialize") {
+      const params = request.params as InitializeParams | undefined;
+      if (params?.clientInfo?.name) {
+        this.clientIdentifier = params.clientInfo.name;
+        return this.clientIdentifier;
       }
     }
+    // For all other requests, use stored client identifier
+    return this.clientIdentifier;
+  }
 
-    // --- 6. Update Memory & Return (No tool call) ---
-    await this.memoryService.addTurn(sessionId, userMessage, responseText);
+  onModuleInit() {
+    this.stdioGatewayService.setMcpServerService(this);
+    logger.info("McpServerService", "Circular dependency resolved", {
+      component: "Layer 3",
+    });
+  }
 
-    return {
-      sessionId,
-      response: responseText,
-      action,
-      metadata: {
-        modelUsed: llmResponse.modelUsed,
-        tokenUsage: llmResponse.tokenUsage,
+  /**
+   * Implements the startListening() method by delegating network startup to Layer 1.
+   */
+  public async startListening(): Promise<void> {
+    logger.info("McpServerService", "Initiating Layer 1 Interface startup", {
+      component: "Layer 3: Abstraction Core",
+    });
+    await this.interfaceLayer.start();
+    logger.info("McpServerService", "McpServerService is operational and awaiting Layer 1 input", {
+      component: "Layer 3",
+    });
+  }
+
+  /**
+   * Handles JSON-RPC requests and routes them to appropriate MCP protocol methods.
+   */
+  public async handleRequest(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    try {
+      let response: JsonRpcResponse;
+      switch (request.method) {
+        case "initialize":
+          response = await this.handleInitialize(request);
+          logger.audit(
+            "McpServerService",
+            "initialize",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "tools/list":
+          response = await this.handleListTools(request);
+          logger.audit(
+            "McpServerService",
+            "tools/list",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "tools/call":
+          response = await this.handleCallTool(request);
+          // Audit logging for tools/call is done inside handleCallTool for more detail
+          return response;
+        default:
+          logger.warn("McpServerService", "Method not found", {
+            component: "Layer 3",
+            method: request.method,
+            requestId: request.id,
+          });
+          return createJsonRpcError(
+            request.id,
+            JsonRpcErrorCode.MethodNotFound,
+            `Method not found: ${request.method}`,
+          );
+      }
+    } catch (error) {
+      logger.error("McpServerService", "Unhandled error in handleRequest", {
+        component: "Layer 3",
+        method: request.method,
+        requestId: request.id,
+        error: sanitizeErrorMessage(error),
+      });
+      // Never expose internal error details to client
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InternalError,
+        "Internal error",
+      );
+    }
+  }
+
+  /**
+   * Handles the initialize request.
+   * Returns server capabilities and protocol version.
+   */
+  private async handleInitialize(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as InitializeParams | undefined;
+
+    if (!params || typeof params.protocolVersion !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid protocolVersion",
+      );
+    }
+
+    const result: InitializeResult = {
+      protocolVersion: "2024-11-05",
+      capabilities: {
+        tools: {},
       },
+      serverInfo: this.getServerInfo(),
     };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles the tools/list request.
+   * Returns all registered tools in MCP format.
+   */
+  private async handleListTools(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const tools = this.toolRegistry.getToolSchemasForLLM();
+    const mcpTools: McpTool[] = tools.map((tool) => ({
+      name: tool.function.name,
+      description: tool.function.description,
+      inputSchema: tool.function.parameters,
+    }));
+
+    const result: ListToolsResult = {
+      tools: mcpTools,
+    };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles the tools/call request.
+   * Executes the requested tool and returns the result.
+   * Includes comprehensive audit logging for security and compliance.
+   * 
+   * Note: This implementation does not perform authorization checks to determine
+   * which callers may execute which tools. This is acceptable for local stdio usage
+   * where the client process is trusted, but may require additional authorization
+   * mechanisms for production deployments with untrusted clients or multi-tenant scenarios.
+   * Tool execution is validated for shape and schema, but access control is delegated
+   * to the operating system's process isolation model.
+   */
+  private async handleCallTool(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as CallToolParams | undefined;
+
+    const actorId = this.getActorIdentifier(request);
+
+    if (!params) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        { reason: "Missing params", method: request.method },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing params",
+      );
+    }
+
+    if (!params.name || typeof params.name !== "string") {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        { reason: "Missing or invalid tool name", method: request.method },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid tool name",
+      );
+    }
+
+    const toolName = params.name;
+    
+    // Validate that arguments is a plain object (not array, string, etc.)
+    if (params.arguments !== undefined && params.arguments !== null) {
+      if (
+        typeof params.arguments !== "object" ||
+        Array.isArray(params.arguments)
+      ) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "Invalid arguments type - must be a plain object",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidParams,
+          "Arguments must be a plain object",
+        );
+      }
+    }
+    
+    const args = params.arguments || {};
+
+    // Get tool definition for schema validation
+    const tool = this.toolRegistry.getTool(toolName);
+    if (!tool) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Tool not found",
+          toolName,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolNotFound,
+        "Tool not found",
+      );
+    }
+
+    // Validate arguments against tool schema
+    const validationError = validateToolArguments(
+      args,
+      tool.parameters,
+      tool.required,
+    );
+    if (validationError) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Invalid arguments",
+          toolName,
+          validationError,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        validationError,
+      );
+    }
+
+    try {
+      const toolResult = await this.toolRegistry.executeTool(toolName, args);
+
+      // Sanitize result to prevent sensitive data exposure
+      const sanitizedResult = sanitizeToolResult(toolResult);
+
+      const result: CallToolResult = {
+        content: [
+          {
+            type: "text",
+            text: sanitizedResult,
+          },
+        ],
+        isError: false,
+      };
+
+      // Audit log: Tool execution completed successfully
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "success",
+        {
+          toolName,
+          resultSize: sanitizedResult.length,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      // Handle tool-specific errors
+      if (error instanceof ToolNotFoundError) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolNotFoundError",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          McpErrorCode.ToolNotFound,
+          "Tool not found",
+        );
+      }
+
+      if (error instanceof ToolExecutionError) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolExecutionError",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        // Use JSON-RPC error instead of success with isError flag
+        return createJsonRpcError(
+          request.id,
+          McpErrorCode.ToolExecutionError,
+          "Tool execution failed",
+        );
+      }
+
+      // Unknown error - log for debugging but don't expose details to client
+      logger.error("McpServerService", "Unknown error during tool execution", {
+        component: "Layer 3",
+        toolName,
+        requestId: request.id,
+        error: sanitizeErrorMessage(error),
+      });
+
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Unknown error",
+          toolName,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
+      // Never expose internal error details to client
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Tool execution failed",
+      );
+    }
   }
 }
