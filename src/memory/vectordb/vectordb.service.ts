@@ -46,7 +46,7 @@ export class VectorDBService {
     let url: URL;
     try {
       url = new URL(endpoint);
-    } catch (error) {
+    } catch {
       throw new Error(`Invalid VectorDB endpoint URL: ${endpoint}`);
     }
 

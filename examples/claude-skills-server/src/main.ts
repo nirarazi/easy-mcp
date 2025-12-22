@@ -48,13 +48,22 @@ async function bootstrap() {
       type: 'FIRESTORE',
       appId: 'claude-skills-server',
       authToken: process.env.FIREBASE_AUTH_TOKEN || null,
-      config: process.env.FIREBASE_CONFIG
-        ? JSON.parse(process.env.FIREBASE_CONFIG)
-        : {
-            // Default Firebase config (for development)
-            // In production, provide proper Firebase config via FIREBASE_CONFIG env var
-            projectId: 'claude-skills-dev',
-          },
+      config: (() => {
+        if (process.env.FIREBASE_CONFIG) {
+          try {
+            return JSON.parse(process.env.FIREBASE_CONFIG);
+          } catch (error) {
+            throw new Error(
+              `Failed to parse FIREBASE_CONFIG environment variable: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+        // Default Firebase config (for development)
+        // In production, provide proper Firebase config via FIREBASE_CONFIG env var
+        return {
+          projectId: 'claude-skills-dev',
+        };
+      })(),
     },
     llmProvider: {
       model: process.env.LLM_MODEL || 'gemini-1.5-flash',

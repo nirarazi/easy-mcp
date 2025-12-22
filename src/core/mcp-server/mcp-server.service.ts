@@ -15,7 +15,7 @@ import {
   McpMessageOutput,
 } from "../../interface/mcp.interface";
 import { ConversationTurn } from "../../memory/memory.interface";
-import { sanitizeToolArgs, sanitizeErrorMessage } from "../utils/sanitize.util";
+import { sanitizeToolArgs, sanitizeErrorMessage, sanitizeToolResult } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -69,9 +69,8 @@ export class McpServerService implements OnModuleInit {
     // If toolResult is provided, this is a continuation after tool execution
     if (toolResult) {
       // Add tool result to conversation history
-      const toolResultContent = typeof toolResult.result === 'string' 
-        ? toolResult.result 
-        : JSON.stringify(toolResult.result);
+      // Sanitize the result to prevent sensitive data exposure
+      const toolResultContent = sanitizeToolResult(toolResult.result);
       
       const toolResultTurn: ConversationTurn = {
         role: "tool",
@@ -138,6 +137,13 @@ export class McpServerService implements OnModuleInit {
     if (llmResponse.toolCall) {
       // Sanitize tool arguments for logging
       const sanitizedArgs = sanitizeToolArgs(llmResponse.toolCall.arguments);
+      const sanitizedArgsString = (() => {
+        try {
+          return JSON.stringify(sanitizedArgs);
+        } catch {
+          return '[tool args could not be serialized]';
+        }
+      })();
       console.log(
         `[Layer 3] LLM suggested tool call: ${llmResponse.toolCall.functionName}`,
       );
@@ -151,21 +157,13 @@ export class McpServerService implements OnModuleInit {
 
         // Convert tool result to string for conversation history
         // Sanitize the result to prevent sensitive data exposure
-        let toolResultString: string;
-        try {
-          toolResultString = typeof toolResult === 'string' 
-            ? toolResult 
-            : JSON.stringify(toolResult);
-        } catch {
-          // Handle circular references or other serialization errors
-          toolResultString = '[Tool result could not be serialized]';
-        }
+        const toolResultString = sanitizeToolResult(toolResult);
 
         // Add tool call and result to conversation history
         // Use sanitized args in the content to prevent sensitive data exposure
         const toolCallTurn: ConversationTurn = {
           role: "tool",
-          content: `Tool ${llmResponse.toolCall.functionName} called with args: ${JSON.stringify(sanitizedArgs)}`,
+          content: `Tool ${llmResponse.toolCall.functionName} called with args: ${sanitizedArgsString}`,
           timestamp: new Date(),
           toolResult: toolResultString,
         };

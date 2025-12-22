@@ -2,6 +2,8 @@ import { Injectable, Optional, Inject } from "@nestjs/common";
 import { IMemoryService, ConversationTurn } from "./memory.interface";
 import { type McpConfig } from "../config/mcp-config.interface"; // Needed for configuration
 import { VectorDBService } from "./vectordb/vectordb.service";
+import { CONFIG_TOKEN } from "../config/constants";
+import { sanitizeErrorMessage } from "../core/utils/sanitize.util";
 
 /**
  * FIX: A minimal, in-memory implementation of IMemoryService for framework development.
@@ -13,7 +15,7 @@ export class SessionMemoryService implements IMemoryService {
   private historyStore: Map<string, ConversationTurn[]> = new Map();
 
   constructor(
-    private readonly config: McpConfig,
+    @Inject(CONFIG_TOKEN) private readonly config: McpConfig,
     @Optional() @Inject(VectorDBService) private readonly vectorDBService?: VectorDBService,
   ) {
     console.log(
@@ -45,7 +47,9 @@ export class SessionMemoryService implements IMemoryService {
           return `${doc.text} (source: ${doc.source}, score: ${doc.score.toFixed(3)})`;
         });
       } catch (error) {
-        console.error("[SessionMemoryService] VectorDB retrieval failed:", error);
+        // Sanitize error message to prevent sensitive data exposure
+        const sanitizedError = sanitizeErrorMessage(error);
+        console.error("[SessionMemoryService] VectorDB retrieval failed:", sanitizedError);
         // Fall back to empty array if VectorDB fails
         return [];
       }

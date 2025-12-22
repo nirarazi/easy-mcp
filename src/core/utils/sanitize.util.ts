@@ -61,7 +61,14 @@ export function sanitizeObject(
     // Check if this key should be redacted
     if (lowerSensitiveKeys.some(sensitiveKey => lowerKey.includes(sensitiveKey))) {
       sanitized[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    } else if (Array.isArray(value)) {
+      // Recursively sanitize objects within arrays
+      sanitized[key] = value.map((item) =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? sanitizeObject(item as Record<string, any>, sensitiveKeys)
+          : item,
+      ) as any;
+    } else if (typeof value === 'object' && value !== null) {
       // Recursively sanitize nested objects
       sanitized[key] = sanitizeObject(value as Record<string, any>, sensitiveKeys);
     } else {
@@ -79,6 +86,41 @@ export function sanitizeObject(
  */
 export function sanitizeToolArgs(args: Record<string, any>): Record<string, any> {
   return sanitizeObject(args, ['password', 'token', 'apiKey', 'secret', 'auth', 'credential', 'key', 'apikey']);
+}
+
+/**
+ * Sanitizes tool results to prevent sensitive data exposure.
+ * @param result Tool result to sanitize (can be any type)
+ * @returns Sanitized result (stringified if object, otherwise as-is)
+ */
+export function sanitizeToolResult(result: any): string {
+  if (result === null || result === undefined) {
+    return String(result);
+  }
+
+  if (typeof result === 'string') {
+    // For strings, check for common sensitive patterns and redact them
+    let sanitized = result;
+    // Redact common sensitive patterns in strings
+    sanitized = sanitized.replace(/api[_-]?key['":\s]*[=:]\s*[^\s,}]+/gi, 'api[REDACTED]');
+    sanitized = sanitized.replace(/token['":\s]*[=:]\s*[^\s,}]+/gi, 'token[REDACTED]');
+    sanitized = sanitized.replace(/password['":\s]*[=:]\s*[^\s,}]+/gi, 'password[REDACTED]');
+    sanitized = sanitized.replace(/secret['":\s]*[=:]\s*[^\s,}]+/gi, 'secret[REDACTED]');
+    return sanitized;
+  }
+
+  if (typeof result === 'object') {
+    try {
+      // Sanitize object before stringifying
+      const sanitized = sanitizeObject(result as Record<string, any>, ['password', 'token', 'apiKey', 'secret', 'auth', 'credential', 'key', 'apikey']);
+      return JSON.stringify(sanitized);
+    } catch {
+      // Handle circular references or other serialization errors
+      return '[Tool result could not be serialized]';
+    }
+  }
+
+  return String(result);
 }
 
 /**

@@ -23,6 +23,7 @@ import { SessionState } from "../../session/memory.interface";
 import { IMemoryService, ConversationTurn } from "../memory.interface";
 import { CONFIG_TOKEN } from "../../config/constants";
 import { VectorDBService } from "../vectordb/vectordb.service";
+import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
 
 /**
  * Service to manage Short-Term Memory (STM) using Firestore.
@@ -117,10 +118,26 @@ export class FirestoreMemoryService implements IMemoryService {
       .map(turn => {
         // Convert "system" role to "model" for compatibility with LLM providers
         const role = turn.role === "system" ? "model" : turn.role;
+        
+        // Convert Firestore Timestamp to Date if necessary
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        const rawTs: unknown = (turn as { timestamp?: unknown }).timestamp;
+        let timestamp: Date;
+        if (rawTs instanceof Date) {
+          timestamp = rawTs;
+        } else if (rawTs && typeof rawTs === 'object' && 'toDate' in rawTs && typeof (rawTs as { toDate?: () => Date }).toDate === 'function') {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          timestamp = (rawTs as { toDate: () => Date }).toDate();
+        } else if (typeof rawTs === 'string' || typeof rawTs === 'number') {
+          timestamp = new Date(rawTs);
+        } else {
+          timestamp = new Date();
+        }
+        
         return {
           role: role,
           content: turn.content,
-          timestamp: turn.timestamp,
+          timestamp,
           toolResult: turn.toolResult,
         };
       });
@@ -142,7 +159,9 @@ export class FirestoreMemoryService implements IMemoryService {
           return `${doc.text} (source: ${doc.source}, score: ${doc.score.toFixed(3)})`;
         });
       } catch (error) {
-        console.error("[FirestoreMemoryService] VectorDB retrieval failed:", error);
+        // Sanitize error message to prevent sensitive data exposure
+        const sanitizedError = sanitizeErrorMessage(error);
+        console.error("[FirestoreMemoryService] VectorDB retrieval failed:", sanitizedError);
         // Fall back to empty array if VectorDB fails
         return [];
       }
@@ -161,6 +180,9 @@ export class FirestoreMemoryService implements IMemoryService {
     modelResponse: string,
   ): Promise<void> {
     const state = await this.getSessionState(sessionId);
+    
+    // Ensure history exists for new/malformed sessions
+    state.history = state.history ?? [];
     
     // Add user and model turns to history
     state.history.push({
