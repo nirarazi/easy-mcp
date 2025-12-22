@@ -20,6 +20,8 @@ export class StdioGatewayService implements IInterfaceLayer {
   private isRunning = false;
   private pendingContentLength: number | null = null;
   private messageBuffer: Buffer = Buffer.alloc(0);
+  private signalHandlers: Array<{ signal: string; handler: () => void }> = [];
+  private contentLengthTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     logger.info("StdioGatewayService", "StdioGatewayService initialized", {
@@ -84,18 +86,28 @@ export class StdioGatewayService implements IInterfaceLayer {
     });
 
     // Handle process termination
-    process.on("SIGINT", () => {
+    // Store handler references so they can be removed on shutdown to prevent leaks
+    const sigintHandler = () => {
       this.shutdown();
-    });
+    };
+    const sigtermHandler = () => {
+      this.shutdown();
+    };
 
-    process.on("SIGTERM", () => {
-      this.shutdown();
-    });
+    process.on("SIGINT", sigintHandler);
+    process.on("SIGTERM", sigtermHandler);
+
+    // Store handlers for cleanup
+    this.signalHandlers = [
+      { signal: "SIGINT", handler: sigintHandler },
+      { signal: "SIGTERM", handler: sigtermHandler },
+    ];
   }
 
   /**
    * Handles a single line from stdin.
    * Implements Content-Length framing with proper multi-line JSON support.
+   * Includes timeout protection to prevent DoS attacks via incomplete messages.
    */
   private async handleLine(line: string): Promise<void> {
     // If we're waiting for a message body, accumulate bytes
@@ -105,6 +117,12 @@ export class StdioGatewayService implements IInterfaceLayer {
 
       // Check if we've read enough bytes
       if (this.messageBuffer.length >= this.pendingContentLength) {
+        // Clear timeout since we received the complete message
+        if (this.contentLengthTimeout) {
+          clearTimeout(this.contentLengthTimeout);
+          this.contentLengthTimeout = null;
+        }
+
         const messageBytes = this.messageBuffer.subarray(0, this.pendingContentLength);
         const message = messageBytes.toString("utf8");
         
@@ -144,6 +162,11 @@ export class StdioGatewayService implements IInterfaceLayer {
           contentLength,
           maxAllowed: MAX_CONTENT_LENGTH,
         });
+        // Clear any existing timeout
+        if (this.contentLengthTimeout) {
+          clearTimeout(this.contentLengthTimeout);
+          this.contentLengthTimeout = null;
+        }
         // Reset state to prevent hanging
         this.pendingContentLength = null;
         this.messageBuffer = Buffer.alloc(0);
@@ -153,6 +176,21 @@ export class StdioGatewayService implements IInterfaceLayer {
       // Start accumulating message bytes
       this.pendingContentLength = contentLength;
       this.messageBuffer = Buffer.alloc(0);
+
+      // Set timeout to prevent DoS via incomplete messages
+      // If message body is not received within 30 seconds, reset state
+      this.contentLengthTimeout = setTimeout(() => {
+        logger.error("StdioGatewayService", "Content-Length timeout: message body not received within timeout period", {
+          component: "Layer 1",
+          contentLength,
+          timeoutMs: 30000,
+        });
+        // Reset state to prevent hanging
+        this.pendingContentLength = null;
+        this.messageBuffer = Buffer.alloc(0);
+        this.contentLengthTimeout = null;
+      }, 30000); // 30 second timeout
+
       return;
     }
 
@@ -306,8 +344,21 @@ export class StdioGatewayService implements IInterfaceLayer {
 
   /**
    * Gracefully shuts down the stdio gateway
+   * Removes signal handlers to prevent memory leaks and duplicate handlers
    */
   private shutdown(): void {
+    // Remove signal handlers to prevent leaks
+    for (const { signal, handler } of this.signalHandlers) {
+      process.removeListener(signal, handler);
+    }
+    this.signalHandlers = [];
+
+    // Clear any pending timeout
+    if (this.contentLengthTimeout) {
+      clearTimeout(this.contentLengthTimeout);
+      this.contentLengthTimeout = null;
+    }
+
     if (this.rl) {
       this.rl.close();
     }

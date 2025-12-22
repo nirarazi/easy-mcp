@@ -24,7 +24,7 @@ import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolArgs, sanitizeToolResult } from "../utils/sanitize.util";
+import { sanitizeToolArgs, sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -51,6 +51,12 @@ export class McpServerService implements OnModuleInit {
   /**
    * Extracts actor identifier from request for audit logging.
    * Uses clientInfo from initialize request if available, otherwise uses stored client identifier.
+   * 
+   * Note: The actor identifier is client-supplied and not authenticated/verified.
+   * This is acceptable for local stdio usage where the client process is trusted,
+   * but should not be relied upon for security-critical authorization decisions.
+   * For production deployments requiring strict access control, additional authentication
+   * mechanisms should be implemented at the transport layer or application level.
    */
   private getActorIdentifier(request: JsonRpcRequest): string {
     // For initialize requests, extract client identifier from clientInfo
@@ -137,7 +143,7 @@ export class McpServerService implements OnModuleInit {
         component: "Layer 3",
         method: request.method,
         requestId: request.id,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: sanitizeErrorMessage(error),
       });
       // Never expose internal error details to client
       return createJsonRpcError(
@@ -201,6 +207,13 @@ export class McpServerService implements OnModuleInit {
    * Handles the tools/call request.
    * Executes the requested tool and returns the result.
    * Includes comprehensive audit logging for security and compliance.
+   * 
+   * Note: This implementation does not perform authorization checks to determine
+   * which callers may execute which tools. This is acceptable for local stdio usage
+   * where the client process is trusted, but may require additional authorization
+   * mechanisms for production deployments with untrusted clients or multi-tenant scenarios.
+   * Tool execution is validated for shape and schema, but access control is delegated
+   * to the operating system's process isolation model.
    */
   private async handleCallTool(
     request: JsonRpcRequest,
@@ -413,7 +426,7 @@ export class McpServerService implements OnModuleInit {
         component: "Layer 3",
         toolName,
         requestId: request.id,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: sanitizeErrorMessage(error),
       });
 
       logger.audit(
