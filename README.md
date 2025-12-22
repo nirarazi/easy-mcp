@@ -1,98 +1,281 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# EasyMCP Framework
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+A NestJS-based framework for building Model Context Protocol (MCP) servers with LLM integration, tool execution, and memory management.
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+EasyMCP simplifies the creation of MCP (Model Context Protocol) servers by providing a clean, layered architecture that handles:
 
-## Project setup
+- **LLM Integration**: Seamless integration with Google Gemini (extensible to other providers)
+- **Tool Execution**: Automatic execution of tools when LLMs call them
+- **Memory Management**: Short-term conversation history and long-term RAG (Retrieval-Augmented Generation)
+- **Type Safety**: Full TypeScript support with comprehensive type definitions
 
-```bash
-$ pnpm install
-```
-
-## Compile and run the project
-
-```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
-```
-
-## Run tests
+## Installation
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+npm install easy-mcp-framework
+# or
+pnpm add easy-mcp-framework
+# or
+yarn add easy-mcp-framework
 ```
 
-## Deployment
+## Quick Start
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+```typescript
+import { EasyMCP, McpConfig } from 'easy-mcp-framework';
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+// Define your tools
+async function getUser(args: { userId: string }): Promise<string> {
+  // Your tool logic here
+  const user = await fetchUser(args.userId);
+  return JSON.stringify(user);
+}
 
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+// Configure EasyMCP
+const config: McpConfig = {
+  persistence: {
+    type: 'FIRESTORE',
+    appId: 'my-app',
+    authToken: process.env.FIREBASE_AUTH_TOKEN,
+    config: { /* Firebase config */ },
+  },
+  llmProvider: {
+    model: 'gemini-1.5-flash',
+    apiKey: process.env.GOOGLE_API_KEY,
+    systemInstruction: 'You are a helpful assistant.',
+  },
+  ltmConfig: {
+    vectorDB: {
+      type: 'VECTOR_DB_SERVICE',
+      endpoint: 'https://your-vectordb.com',
+      collectionName: 'documents',
+    },
+    retrievalK: 3,
+  },
+  tools: [
+    {
+      name: 'getUser',
+      description: 'Retrieves user details by ID',
+      function: getUser,
+      inputSchema: {
+        type: 'OBJECT',
+        properties: {
+          userId: {
+            type: 'STRING',
+            description: 'The unique ID of the user',
+          },
+        },
+        required: ['userId'],
+      },
+    },
+  ],
+};
+
+// Initialize and run
+async function bootstrap() {
+  await EasyMCP.initialize(config);
+  await EasyMCP.run();
+}
+
+bootstrap();
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Configuration
 
-## Resources
+### McpConfig
 
-Check out a few resources that may come in handy when working with NestJS:
+The main configuration object passed to `EasyMCP.initialize()`:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```typescript
+interface McpConfig {
+  persistence: PersistenceConfig;
+  llmProvider: LlmProviderConfig;
+  ltmConfig: LTMConfig;
+  tools: ToolRegistrationInput[];
+}
+```
 
-## Support
+### PersistenceConfig
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Configuration for short-term memory (conversation history):
 
-## Stay in touch
+```typescript
+interface PersistenceConfig {
+  type: 'FIRESTORE';
+  appId: string;
+  authToken: string | null;
+  config: any; // Firebase configuration object
+}
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### LlmProviderConfig
+
+Configuration for the LLM provider:
+
+```typescript
+interface LlmProviderConfig {
+  model: string; // e.g., 'gemini-1.5-flash'
+  apiKey: string;
+  systemInstruction: string;
+}
+```
+
+### LTMConfig
+
+Configuration for long-term memory (RAG):
+
+```typescript
+interface LTMConfig {
+  vectorDB: {
+    type: string;
+    endpoint: string;
+    collectionName: string;
+  };
+  retrievalK: number; // Number of documents to retrieve
+}
+```
+
+## Tool Registration
+
+Tools are automatically registered when passed in the `config.tools` array. Each tool must implement:
+
+```typescript
+interface ToolRegistrationInput {
+  name: string;
+  description: string;
+  function: (args: Record<string, any>) => Promise<any>;
+  inputSchema: {
+    type: 'OBJECT';
+    properties: Record<string, {
+      type: 'STRING' | 'NUMBER' | 'INTEGER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT';
+      description: string;
+      enum?: string[];
+    }>;
+    required?: string[];
+  };
+}
+```
+
+### Example Tool
+
+```typescript
+async function searchDatabase(args: { query: string; limit?: number }): Promise<string> {
+  const results = await db.search(args.query, args.limit || 10);
+  return JSON.stringify(results);
+}
+
+const searchTool: ToolRegistrationInput = {
+  name: 'searchDatabase',
+  description: 'Searches the database for matching records',
+  function: searchDatabase,
+  inputSchema: {
+    type: 'OBJECT',
+    properties: {
+      query: {
+        type: 'STRING',
+        description: 'The search query',
+      },
+      limit: {
+        type: 'INTEGER',
+        description: 'Maximum number of results to return',
+      },
+    },
+    required: ['query'],
+  },
+};
+```
+
+## API Reference
+
+### EasyMCP Class
+
+#### `static initialize(config: McpConfig): Promise<void>`
+
+Initializes the EasyMCP framework with the provided configuration. Must be called before `run()`.
+
+#### `static run(): Promise<void>`
+
+Starts the EasyMCP server and begins listening for messages.
+
+#### `static getService<T>(token: string | symbol): T`
+
+Retrieves a service from the NestJS application context. Useful for advanced use cases.
+
+### Types
+
+- `McpConfig` - Main configuration interface
+- `ToolRegistrationInput` - Tool definition interface
+- `McpMessageInput` - Input message format
+- `McpMessageOutput` - Output message format
+- `ConversationTurn` - Conversation history turn
+- `IMemoryService` - Memory service interface
+- `IInterfaceLayer` - Interface layer interface
+- `ILlmClient` - LLM client interface
+
+## Architecture
+
+EasyMCP uses a 4-layer architecture:
+
+1. **Interface Layer**: Handles communication (WebSockets, HTTP, etc.)
+2. **Memory Layer**: Manages short-term (conversation) and long-term (vector DB) memory
+3. **Abstraction Layer**: Core orchestration logic
+4. **Provider Layer**: Connects to LLMs (Google Gemini)
+
+## Examples
+
+### Basic Chat Bot
+
+```typescript
+import { EasyMCP, McpConfig } from 'easy-mcp-framework';
+
+const config: McpConfig = {
+  // ... configuration
+  tools: [], // No tools needed for basic chat
+};
+
+await EasyMCP.initialize(config);
+await EasyMCP.run();
+```
+
+### Tool-Enabled Assistant
+
+```typescript
+// Define tools that interact with your application
+const tools = [
+  createUserTool,
+  updateUserTool,
+  deleteUserTool,
+  // ... more tools
+];
+
+const config: McpConfig = {
+  // ... configuration
+  tools,
+};
+
+await EasyMCP.initialize(config);
+await EasyMCP.run();
+```
+
+## Error Handling
+
+EasyMCP provides custom error classes:
+
+- `EasyMcpError` - Base error class
+- `ConfigurationError` - Configuration validation errors
+- `ToolExecutionError` - Tool execution failures
+- `ToolNotFoundError` - Tool not found in registry
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues and questions, please open an issue on [GitHub](https://github.com/nirarazi/easy-mcp).

@@ -1,8 +1,10 @@
 // The standard representation of a turn in the conversation history
 export interface ConversationTurn {
-  role: "user" | "model";
+  role: "user" | "model" | "tool";
   content: string;
   timestamp: Date;
+  /** Optional: Used for the 'tool' role to store the tool's output. */
+  toolResult?: string;
 }
 
 // Contract for the core memory management service (Layer 2)
