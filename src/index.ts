@@ -47,5 +47,9 @@ export {
   ConfigurationError,
   ToolExecutionError,
   ToolNotFoundError,
+  LlmApiError,
 } from './core/errors/easy-mcp-error';
+
+// Constants (for advanced use cases)
+export { INTERFACE_LAYER_TOKEN } from './config/constants';
 

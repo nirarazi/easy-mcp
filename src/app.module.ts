@@ -5,79 +5,48 @@ import { McpServerService } from "./core/mcp-server/mcp-server.service";
 import { ProvidersModule } from "./providers/providers.module";
 import { MemoryModule } from "./memory/memory.module";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
-import {
-  McpConfig,
-  ToolRegistrationInput,
-} from "./config/mcp-config.interface";
 import { ConfigHolderService } from "./config/config-holder.service";
 import { CONFIG_TOKEN, SYSTEM_INSTRUCTION_TOKEN } from "./config/constants";
 
-async function lookupCodeExample(args: Record<string, any>): Promise<string> {
-  console.log(`TOOL: Performing specific database lookup for: ${args.query}`);
+// NOTE: This module is used internally by EasyMCP.initialize().
+// The placeholder configs below are required for NestJS module initialization.
+// The actual configuration is provided at runtime via EasyMCP.initialize(config)
+// and stored in ConfigHolderService, which services read from.
 
-  // Safely cast/destructure the arguments to access 'query'
-  const { query } = args as { query: string };
-
-  if (!query) {
-    throw new Error("Missing required 'query' argument for tool.");
-  }
-
-  console.log(`TOOL: Performing specific database lookup for: ${query}`);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-
-  if (query.toLowerCase().includes("react")) {
-    return "Found React component example: Uses functional component 'CodeBlock' to display TypeScript syntax highlighting.";
-  }
-  return "Code example lookup failed: Query too broad.";
-}
-
-const lookupCodeTool: ToolRegistrationInput = {
-  name: "lookupCodeExample",
-  description:
-    "Use this tool to search the private code repository for specific example code blocks.",
-  function: lookupCodeExample,
-  inputSchema: {
-    type: "OBJECT",
-    properties: {
-      query: {
-        type: "STRING",
-        description:
-          "The specific code topic or programming language the user is asking about.",
-      },
-    },
-    required: ["query"],
-  },
+// Minimal placeholder configs for module initialization
+// These will be replaced by the real config in EasyMCP.initialize()
+const PLACEHOLDER_LLM_CONFIG = {
+  model: "gemini-1.5-flash",
+  apiKey: "placeholder",
+  systemInstruction: "Placeholder",
 };
 
-// NOTE: This config would be loaded from EasyMCP.initialize() or ENV files.
-const FRAMEWORK_CONFIG: McpConfig = {
+const PLACEHOLDER_MCP_CONFIG = {
   persistence: {
-    type: "FIRESTORE",
-    config: {},
-    appId: "techdocs-app",
+    type: "FIRESTORE" as const,
+    appId: "placeholder",
     authToken: null,
+    config: {},
   },
-  llmProvider: {
-    model: "gemini-2.5-flash-preview-09-2025",
-    apiKey: "YOUR_SECURE_API_KEY",
-    systemInstruction:
-      "You are the highly knowledgeable TechDocs AI Assistant. Always be concise and professional.",
-  },
+  llmProvider: PLACEHOLDER_LLM_CONFIG,
   ltmConfig: {
     vectorDB: {
       type: "VECTOR_DB_SERVICE",
-      endpoint: "https://vectordb.techdocs.com/index-a",
-      collectionName: "code_documentation_v2",
+      endpoint: "https://placeholder.com",
+      collectionName: "placeholder",
     },
     retrievalK: 3,
   },
-  tools: [lookupCodeTool],
+  tools: [],
 };
 
 @Module({
   imports: [
-    ProvidersModule.forRoot(FRAMEWORK_CONFIG.llmProvider), // Pass config to Layer 4
-    MemoryModule.forRoot(FRAMEWORK_CONFIG), // Pass config to Layer 2
+    // These modules require config via forRoot() at module definition time.
+    // The placeholder configs above are used here, but the real config
+    // is provided via EasyMCP.initialize() and stored in ConfigHolderService.
+    ProvidersModule.forRoot(PLACEHOLDER_LLM_CONFIG),
+    MemoryModule.forRoot(PLACEHOLDER_MCP_CONFIG),
   ],
   providers: [
     // Layer 3: The Orchestrator

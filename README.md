@@ -281,17 +281,36 @@ graph TB
 
 ### Interface Layer Implementation
 
-**Important**: The framework includes a mock `WebSocketGatewayService` for development and testing. For production use, you have two options:
+**⚠️ Important Limitation (v0.1.0)**: The framework includes a mock `WebSocketGatewayService` that only logs messages to the console. The interface layer is currently **not easily extensible** without modifying framework source code.
 
-#### Option 1: Implement Your Own Interface Layer
+#### Current State
 
-You must implement the `IInterfaceLayer` interface to handle actual client connections:
+The default `WebSocketGatewayService` is a **mock implementation** suitable for:
+- ✅ Development and testing
+- ✅ Understanding the framework architecture
+- ❌ **NOT suitable for production use**
+
+The mock service automatically sends a test message when `start()` is called (intentional for testing).
+
+#### Options for Production Use
+
+**Option 1: Modify Framework Source Code (Current Workaround)**
+
+To use a custom interface layer, you'll need to:
+
+1. Fork or modify the framework source code
+2. Replace `WebSocketGatewayService` in `src/interface/websocket-gateway.service.ts` with your implementation
+3. Or modify `src/interface/interface.module.ts` to use your custom implementation
+
+Example custom interface layer:
 
 ```typescript
+import { Injectable } from '@nestjs/common';
 import { IInterfaceLayer, McpMessageOutput } from 'easy-mcp-framework';
 import { McpServerService } from 'easy-mcp-framework';
 
-class MyWebSocketInterface implements IInterfaceLayer {
+@Injectable()
+export class MyWebSocketInterface implements IInterfaceLayer {
   private mcpServer: McpServerService;
 
   constructor(mcpServer: McpServerService) {
@@ -309,23 +328,22 @@ class MyWebSocketInterface implements IInterfaceLayer {
 }
 ```
 
-Then register it in your NestJS module:
+**Option 2: Use Framework as Reference Implementation**
+
+If you need full control over the interface layer, consider using EasyMCP as a reference implementation and building your own MCP server using the patterns demonstrated in the framework.
+
+**Option 3: Wait for Future Versions**
+
+Future versions (v0.2.0+) will include proper extensibility for the interface layer, allowing you to provide custom implementations without modifying framework code.
+
+#### Using INTERFACE_LAYER_TOKEN
+
+The `INTERFACE_LAYER_TOKEN` is exported from the framework for advanced use cases, but currently cannot be used to override the default implementation without modifying framework source code.
 
 ```typescript
 import { INTERFACE_LAYER_TOKEN } from 'easy-mcp-framework';
-
-// In your module providers:
-{
-  provide: INTERFACE_LAYER_TOKEN,
-  useClass: MyWebSocketInterface,
-}
+// Token is available but requires framework modification to use
 ```
-
-#### Option 2: Use the Provided Mock (Development Only)
-
-The framework includes `WebSocketGatewayService` which logs messages to console. This is suitable for development and testing but **not for production**.
-
-**Note**: The mock service automatically sends a test message when `start()` is called. This is intentional for testing purposes.
 
 ## Examples
 
@@ -371,12 +389,20 @@ EasyMCP provides custom error classes for better error handling:
 - `ConfigurationError` - Configuration validation errors
 - `ToolExecutionError` - Tool execution failures
 - `ToolNotFoundError` - Tool not found in registry
+- `LlmApiError` - LLM API call failures (network errors, rate limits, authentication, etc.)
 
 ### Error Handling Examples
 
 ```typescript
-import { EasyMCP, ConfigurationError, ToolExecutionError, ToolNotFoundError } from 'easy-mcp-framework';
+import { 
+  EasyMCP, 
+  ConfigurationError, 
+  ToolExecutionError, 
+  ToolNotFoundError,
+  LlmApiError 
+} from 'easy-mcp-framework';
 
+// Configuration errors
 try {
   await EasyMCP.initialize(config);
 } catch (error) {
@@ -388,7 +414,27 @@ try {
   }
 }
 
-// When calling tools programmatically
+// LLM API errors (handled automatically, but you can catch them)
+try {
+  const mcpServer = EasyMCP.getService<McpServerService>(McpServerService);
+  const response = await mcpServer.handleMessage({ sessionId: 'test', text: 'Hello' });
+} catch (error) {
+  if (error instanceof LlmApiError) {
+    console.error('LLM API error:', error.message);
+    console.error('Provider:', error.provider);
+    console.error('Status code:', error.statusCode);
+    console.error('Original error:', error.originalError);
+    
+    // Handle specific error types
+    if (error.statusCode === 429) {
+      // Rate limit - implement retry with backoff
+    } else if (error.statusCode === 401 || error.statusCode === 403) {
+      // Authentication error - check API key
+    }
+  }
+}
+
+// Tool execution errors
 try {
   const toolRegistry = EasyMCP.getService<ToolRegistryService>(ToolRegistryService);
   const result = await toolRegistry.executeTool('myTool', { arg: 'value' });
@@ -409,11 +455,18 @@ try {
    - Verify API keys are correct
    - Ensure tool schemas are valid
 
-2. **ToolNotFoundError**: Tool not registered or name mismatch
+2. **LlmApiError**: LLM API call failed
+   - **401/403**: Check your API key is correct and has proper permissions
+   - **429**: Rate limit exceeded - implement retry logic with exponential backoff
+   - **500/502/503**: Server error - retry after some time
+   - **Network errors**: Check internet connection and API endpoint accessibility
+   - The framework automatically handles these errors and provides user-friendly messages
+
+3. **ToolNotFoundError**: Tool not registered or name mismatch
    - Verify tool is in `config.tools` array
    - Check tool name spelling matches exactly
 
-3. **ToolExecutionError**: Tool function threw an error
+4. **ToolExecutionError**: Tool function threw an error
    - Check the `originalError` property for details
    - Verify tool function handles all edge cases
    - Ensure tool returns a value (not undefined)

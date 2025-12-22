@@ -18,6 +18,7 @@ import {
 import { McpOutput } from "../../interface/mcp.interface";
 import { ConversationTurn } from "../../session/memory.interface";
 import { LLM_PROVIDER_CONFIG_TOKEN } from "../../../src/config/constants";
+import { LlmApiError } from "../../core/errors/easy-mcp-error";
 
 @Injectable()
 export class GeminiClientService implements ILlmClient {
@@ -53,8 +54,42 @@ export class GeminiClientService implements ILlmClient {
       },
     };
 
-    const response: GenerateContentResponse =
-      await this.aiClient.models.generateContent(request);
+    let response: GenerateContentResponse;
+    try {
+      response = await this.aiClient.models.generateContent(request);
+    } catch (error) {
+      // Handle various types of API errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Check for HTTP status codes in error
+      let statusCode: number | undefined;
+      if (error && typeof error === 'object' && 'status' in error) {
+        statusCode = error.status as number;
+      } else if (error && typeof error === 'object' && 'statusCode' in error) {
+        statusCode = error.statusCode as number;
+      }
+
+      // Provide user-friendly error messages based on status code
+      let message = `Gemini API call failed: ${errorMessage}`;
+      if (statusCode === 401) {
+        message = 'Gemini API authentication failed. Check your API key.';
+      } else if (statusCode === 403) {
+        message = 'Gemini API access forbidden. Check your API key permissions.';
+      } else if (statusCode === 429) {
+        message = 'Gemini API rate limit exceeded. Please retry after some time.';
+      } else if (statusCode === 500 || statusCode === 502 || statusCode === 503) {
+        message = 'Gemini API server error. Please retry later.';
+      } else if (statusCode) {
+        message = `Gemini API error (${statusCode}): ${errorMessage}`;
+      }
+
+      throw new LlmApiError(
+        message,
+        'gemini',
+        statusCode,
+        error instanceof Error ? error : new Error(errorMessage),
+      );
+    }
 
     const usageMetadata = response.usageMetadata ?? {
       promptTokenCount: 0,
