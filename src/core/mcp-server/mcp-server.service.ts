@@ -22,6 +22,7 @@ import {
 import { ToolNotFoundError, ToolExecutionError } from "../errors/easy-mcp-error";
 import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
+import { validateToolArguments } from "../utils/schema-validator";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -44,18 +45,18 @@ export class McpServerService implements OnModuleInit {
 
   onModuleInit() {
     this.stdioGatewayService.setMcpServerService(this);
-    console.log("[Layer 3] Circular dependency resolved.");
+    console.error("[Layer 3] Circular dependency resolved.");
   }
 
   /**
    * Implements the startListening() method by delegating network startup to Layer 1.
    */
   public async startListening(): Promise<void> {
-    console.log(
+    console.error(
       `[Layer 3: Abstraction Core] Initiating Layer 1 Interface startup...`,
     );
     await this.interfaceLayer.start();
-    console.log(
+    console.error(
       `[Layer 3] McpServerService is operational and awaiting Layer 1 input.`,
     );
   }
@@ -98,6 +99,14 @@ export class McpServerService implements OnModuleInit {
     request: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
     const params = request.params as InitializeParams | undefined;
+
+    if (!params || typeof params.protocolVersion !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid protocolVersion",
+      );
+    }
 
     const result: InitializeResult = {
       protocolVersion: "2024-11-05",
@@ -156,21 +165,55 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    // Get tool definition for schema validation
+    const tool = this.toolRegistry.getTool(params.name);
+    if (!tool) {
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolNotFound,
+        `Tool not found: ${params.name}`,
+      );
+    }
+
+    // Validate arguments against tool schema
+    const args = params.arguments || {};
+    const validationError = validateToolArguments(
+      args,
+      tool.parameters,
+      tool.required,
+    );
+    if (validationError) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        validationError,
+      );
+    }
+
     try {
       const toolResult = await this.toolRegistry.executeTool(
         params.name,
-        params.arguments || {},
+        args,
       );
 
       // Convert tool result to MCP format
+      // Sanitize result to prevent sensitive data exposure
+      let resultText: string;
+      if (typeof toolResult === "string") {
+        resultText = toolResult;
+      } else {
+        try {
+          resultText = JSON.stringify(toolResult);
+        } catch (error) {
+          resultText = "[Result could not be serialized]";
+        }
+      }
+
       const result: CallToolResult = {
         content: [
           {
             type: "text",
-            text:
-              typeof toolResult === "string"
-                ? toolResult
-                : JSON.stringify(toolResult),
+            text: resultText,
           },
         ],
         isError: false,
@@ -183,28 +226,24 @@ export class McpServerService implements OnModuleInit {
         return createJsonRpcError(
           request.id,
           McpErrorCode.ToolNotFound,
-          error.message,
+          "Tool not found",
         );
       }
 
       if (error instanceof ToolExecutionError) {
-        const result: CallToolResult = {
-          content: [
-            {
-              type: "text",
-              text: error.message,
-            },
-          ],
-          isError: true,
-        };
-        return createJsonRpcSuccess(request.id, result);
+        // Use JSON-RPC error instead of success with isError flag
+        return createJsonRpcError(
+          request.id,
+          McpErrorCode.ToolExecutionError,
+          "Tool execution failed",
+        );
       }
 
-      // Unknown error
+      // Unknown error - sanitize message
       return createJsonRpcError(
         request.id,
         McpErrorCode.ToolExecutionError,
-        error instanceof Error ? error.message : "Tool execution failed",
+        "Tool execution failed",
       );
     }
   }

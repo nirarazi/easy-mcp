@@ -31,10 +31,10 @@ export class ConfigValidator {
 
     // Validate serverInfo if provided
     if (config.serverInfo) {
-      if (!config.serverInfo.name || typeof config.serverInfo.name !== 'string') {
+      if (!config.serverInfo.name || typeof config.serverInfo.name !== 'string' || config.serverInfo.name.trim().length === 0) {
         throw new ConfigurationError('serverInfo.name must be a non-empty string');
       }
-      if (!config.serverInfo.version || typeof config.serverInfo.version !== 'string') {
+      if (!config.serverInfo.version || typeof config.serverInfo.version !== 'string' || config.serverInfo.version.trim().length === 0) {
         throw new ConfigurationError('serverInfo.version must be a non-empty string');
       }
     }

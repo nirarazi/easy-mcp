@@ -7,7 +7,7 @@ export class ConfigHolderService {
 
   public setConfig(config: McpConfig): void {
     this.config = config;
-    console.log("Configuration successfully loaded into ConfigHolderService.");
+    console.error("Configuration successfully loaded into ConfigHolderService.");
   }
 
   public getConfig(): McpConfig {

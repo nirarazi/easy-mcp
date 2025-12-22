@@ -33,7 +33,7 @@ export class ToolRegistryService {
       throw new Error(`Tool name '${definition.name}' already registered.`);
     }
     this.registry.set(definition.name, definition);
-    console.log(`Tool registered: ${definition.name}`);
+    console.error(`Tool registered: ${definition.name}`);
   }
 
   /**

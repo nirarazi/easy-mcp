@@ -47,10 +47,10 @@ export class EasyMCP {
           throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
         }
       }
-      console.log(`Registered ${config.tools.length} tool(s) from configuration.`);
+      console.error(`Registered ${config.tools.length} tool(s) from configuration.`);
     }
 
-    console.log("EasyMCP Framework initialized successfully.");
+    console.error("EasyMCP Framework initialized successfully.");
   }
 
   /**
@@ -64,7 +64,7 @@ export class EasyMCP {
       );
     }
 
-    console.log("Starting EasyMCP core services...");
+    console.error("Starting EasyMCP core services...");
 
     try {
       // Retrieve the central orchestration service (Layer 3: Abstraction Core)
@@ -73,7 +73,7 @@ export class EasyMCP {
       // Start listening for JSON-RPC requests via stdio
       await mcpServer.startListening();
 
-      console.log(
+      console.error(
         "EasyMCP core services are now running and listening for JSON-RPC requests via stdio.",
       );
     } catch (error) {
@@ -107,12 +107,12 @@ export class EasyMCP {
       return;
     }
 
-    console.log("Shutting down EasyMCP framework...");
+    console.error("Shutting down EasyMCP framework...");
 
     try {
       await this.app.close();
       this.app = null as any; // Clear the reference
-      console.log("EasyMCP framework shut down successfully.");
+      console.error("EasyMCP framework shut down successfully.");
     } catch (error) {
       console.error("Error during EasyMCP shutdown:", error);
       throw error;

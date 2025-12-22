@@ -39,6 +39,19 @@ describe("McpServerService", () => {
   };
 
   beforeEach(async () => {
+    const mockTool = {
+      name: "testTool",
+      description: "A test tool",
+      execute: jest.fn(),
+      parameters: {
+        param: {
+          type: "string" as const,
+          description: "A parameter",
+        },
+      },
+      required: ["param"],
+    };
+
     const mockToolRegistry = {
       getToolSchemasForLLM: jest.fn().mockReturnValue([
         {
@@ -59,6 +72,7 @@ describe("McpServerService", () => {
           },
         },
       ]),
+      getTool: jest.fn().mockReturnValue(mockTool),
       executeTool: jest.fn(),
     };
 
@@ -189,7 +203,7 @@ describe("McpServerService", () => {
         method: "tools/call",
         params: {
           name: "testTool",
-          arguments: {},
+          arguments: { param: "value" }, // Provide required parameter
         },
       };
 
@@ -197,15 +211,13 @@ describe("McpServerService", () => {
 
       expect(response.jsonrpc).toBe("2.0");
       expect(response.id).toBe(5);
-      expect(response.result).toBeDefined();
-      expect(response.result.isError).toBe(true);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(-32002); // McpErrorCode.ToolExecutionError
     });
 
     it("should handle tool not found errors", async () => {
       const { ToolNotFoundError } = require("../errors/easy-mcp-error");
-      toolRegistry.executeTool.mockRejectedValue(
-        new ToolNotFoundError("testTool"),
-      );
+      toolRegistry.getTool.mockReturnValue(undefined); // Tool not found
 
       const request: JsonRpcRequest = {
         jsonrpc: "2.0",
@@ -222,6 +234,7 @@ describe("McpServerService", () => {
       expect(response.jsonrpc).toBe("2.0");
       expect(response.id).toBe(6);
       expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(-32001); // McpErrorCode.ToolNotFound
     });
   });
 });
