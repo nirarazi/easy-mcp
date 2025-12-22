@@ -28,9 +28,76 @@ export class VectorDBService {
     @Inject(VECTOR_DB_CONFIG) config: LTMConfig,
     private embeddingService: EmbeddingService,
   ) {
-    this.endpoint = config.vectorDB.endpoint;
+    this.endpoint = this.validateEndpoint(config.vectorDB.endpoint);
     this.collectionName = config.vectorDB.collectionName;
     console.log(`LTM VectorDB connected to: ${this.endpoint}`);
+  }
+
+  /**
+   * Validates the VectorDB endpoint URL to prevent SSRF attacks.
+   * Only allows HTTP/HTTPS URLs with public IPs or hostnames.
+   * Blocks localhost, private IPs, and internal network addresses.
+   */
+  private validateEndpoint(endpoint: string): string {
+    if (!endpoint || typeof endpoint !== 'string') {
+      throw new Error('VectorDB endpoint must be a non-empty string');
+    }
+
+    let url: URL;
+    try {
+      url = new URL(endpoint);
+    } catch (error) {
+      throw new Error(`Invalid VectorDB endpoint URL: ${endpoint}`);
+    }
+
+    // Only allow HTTP and HTTPS protocols
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`VectorDB endpoint must use http:// or https:// protocol, got: ${url.protocol}`);
+    }
+
+    const hostname = url.hostname.toLowerCase();
+
+    // Block localhost and loopback addresses
+    const blockedHostnames = [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      '::1',
+      '0:0:0:0:0:0:0:1',
+    ];
+
+    if (blockedHostnames.includes(hostname)) {
+      throw new Error(`VectorDB endpoint cannot be localhost or loopback address: ${hostname}`);
+    }
+
+    // Block private IP ranges (RFC 1918)
+    const privateIpPatterns = [
+      /^10\./,                    // 10.0.0.0/8
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+      /^192\.168\./,              // 192.168.0.0/16
+      /^169\.254\./,              // Link-local
+      /^fc00:/,                   // IPv6 private
+      /^fe80:/,                   // IPv6 link-local
+    ];
+
+    for (const pattern of privateIpPatterns) {
+      if (pattern.test(hostname)) {
+        throw new Error(`VectorDB endpoint cannot be a private IP address: ${hostname}`);
+      }
+    }
+
+    // Block metadata endpoints (common cloud provider metadata services)
+    const blockedMetadataHosts = [
+      'metadata.google.internal',
+      '169.254.169.254', // AWS, GCP, Azure metadata
+      'metadata',
+    ];
+
+    if (blockedMetadataHosts.some(blocked => hostname.includes(blocked))) {
+      throw new Error(`VectorDB endpoint cannot point to metadata service: ${hostname}`);
+    }
+
+    return endpoint;
   }
 
   /**

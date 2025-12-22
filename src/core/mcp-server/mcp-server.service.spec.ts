@@ -165,8 +165,7 @@ describe("McpServerService", () => {
       const result = await service.handleMessage(mockInput);
 
       expect(result.response).toContain("Error executing tool");
-      expect(result.action).toBeDefined();
-      expect(result.action?.name).toBe("testTool");
+      expect(result.action).toBeUndefined();
     });
 
     it("should handle multi-turn tool execution with toolResult", async () => {
@@ -196,7 +195,7 @@ describe("McpServerService", () => {
       expect(result.response).toBe("Based on the tool result, here's the answer.");
       expect(llmProvider.generateContent).toHaveBeenCalledTimes(1);
       // Verify tool result was added to conversation
-      const callArgs = llmProvider.generateContent.mock.calls[0][0] as ConversationTurn[];
+      const callArgs = llmProvider.generateContent.mock.calls[0][0];
       expect(callArgs.some((turn) => turn.role === "tool")).toBe(true);
     });
   });

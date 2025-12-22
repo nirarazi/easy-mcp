@@ -18,7 +18,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 // NOTE: You only need to import the Firestore service here.
-import type { PersistenceConfig, McpConfig } from "../../config/mcp-config.interface";
+import type { McpConfig } from "../../config/mcp-config.interface";
 import { SessionState } from "../../session/memory.interface";
 import { IMemoryService, ConversationTurn } from "../memory.interface";
 import { CONFIG_TOKEN } from "../../config/constants";
@@ -110,18 +110,20 @@ export class FirestoreMemoryService implements IMemoryService {
    */
   async getConversationHistory(sessionId: string): Promise<ConversationTurn[]> {
     const state = await this.getSessionState(sessionId);
-    // Filter and map to ensure compatibility with IMemoryService interface
-    // (SessionState allows "system" role, but IMemoryService doesn't)
-    return (state.history || []).map(turn => {
-      // Convert "system" role to "model" for compatibility
-      const role = turn.role === "system" ? "model" : turn.role;
-      return {
-        role: role as "user" | "model" | "tool",
-        content: turn.content,
-        timestamp: turn.timestamp,
-        toolResult: turn.toolResult,
-      };
-    });
+    // Filter and map to ensure compatibility with the ConversationTurn interface.
+    // Only process turns with supported roles to guard against invalid data from the database.
+    return (state.history || [])
+      .filter(turn => ["user", "model", "system", "tool"].includes(turn.role))
+      .map(turn => {
+        // Convert "system" role to "model" for compatibility with LLM providers
+        const role = turn.role === "system" ? "model" : turn.role;
+        return {
+          role: role,
+          content: turn.content,
+          timestamp: turn.timestamp,
+          toolResult: turn.toolResult,
+        };
+      });
   }
 
   /**

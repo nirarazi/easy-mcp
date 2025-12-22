@@ -37,6 +37,9 @@ function createSkillExecutor(skill: LoadedSkill): (args: Record<string, any>) =>
       result = result.replace(new RegExp(placeholder, 'g'), String(value));
     }
 
+    // Remove any remaining (e.g., optional) placeholders to avoid leaking them
+    result = result.replace(/\{\{.*?\}\}/g, '');
+
     // If the skill has a custom executor defined in metadata, use it
     // For now, we'll just return the processed content
     // In a production implementation, you might:

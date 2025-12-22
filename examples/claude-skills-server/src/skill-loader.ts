@@ -50,7 +50,8 @@ function parseFrontmatter(content: string): { frontmatter: any; content: string 
   const markdownContent = match[2];
 
   try {
-    const frontmatter = yaml.load(frontmatterYaml) as any;
+    // Use safe schema to prevent prototype pollution and unsafe type parsing
+    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.DEFAULT_SAFE_SCHEMA }) as any;
     return { frontmatter, content: markdownContent.trim() };
   } catch (error) {
     throw new Error(`Failed to parse YAML frontmatter: ${error instanceof Error ? error.message : String(error)}`);

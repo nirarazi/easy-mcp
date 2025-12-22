@@ -15,8 +15,7 @@ import {
   McpMessageOutput,
 } from "../../interface/mcp.interface";
 import { ConversationTurn } from "../../memory/memory.interface";
-// ToolRegistrationInput is used in the LLM provider interface
-import { ToolRegistrationInput } from "../../config/mcp-config.interface";
+import { sanitizeToolArgs, sanitizeErrorMessage } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -134,9 +133,11 @@ export class McpServerService implements OnModuleInit {
 
     // --- 5. Handle LLM Output (Text or Function Call) ---
     let responseText = llmResponse.response;
-    let action: McpMessageOutput["action"] = undefined;
+    const action: McpMessageOutput["action"] = undefined;
 
     if (llmResponse.toolCall) {
+      // Sanitize tool arguments for logging
+      const sanitizedArgs = sanitizeToolArgs(llmResponse.toolCall.arguments);
       console.log(
         `[Layer 3] LLM suggested tool call: ${llmResponse.toolCall.functionName}`,
       );
@@ -149,14 +150,22 @@ export class McpServerService implements OnModuleInit {
         );
 
         // Convert tool result to string for conversation history
-        const toolResultString = typeof toolResult === 'string' 
-          ? toolResult 
-          : JSON.stringify(toolResult);
+        // Sanitize the result to prevent sensitive data exposure
+        let toolResultString: string;
+        try {
+          toolResultString = typeof toolResult === 'string' 
+            ? toolResult 
+            : JSON.stringify(toolResult);
+        } catch {
+          // Handle circular references or other serialization errors
+          toolResultString = '[Tool result could not be serialized]';
+        }
 
         // Add tool call and result to conversation history
+        // Use sanitized args in the content to prevent sensitive data exposure
         const toolCallTurn: ConversationTurn = {
           role: "tool",
-          content: `Tool ${llmResponse.toolCall.functionName} called with args: ${JSON.stringify(llmResponse.toolCall.arguments)}`,
+          content: `Tool ${llmResponse.toolCall.functionName} called with args: ${JSON.stringify(sanitizedArgs)}`,
           timestamp: new Date(),
           toolResult: toolResultString,
         };
@@ -199,20 +208,18 @@ export class McpServerService implements OnModuleInit {
           },
         };
       } catch (error) {
-        // Tool execution failed
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        responseText = `Error executing tool '${llmResponse.toolCall.functionName}': ${errorMessage}`;
+        // Tool execution failed - sanitize error message to prevent sensitive data leakage
+        const sanitizedErrorMessage = sanitizeErrorMessage(error);
+        responseText = `Error executing tool '${llmResponse.toolCall.functionName}': ${sanitizedErrorMessage}`;
         
-        // Still update memory with the error
+        // Still update memory with the error (sanitized)
         await this.memoryService.addTurn(sessionId, userMessage, responseText);
 
+        // Don't return action details for failed tool execution
         return {
           sessionId,
           response: responseText,
-          action: {
-            name: llmResponse.toolCall.functionName,
-            args: llmResponse.toolCall.arguments,
-          },
+          action: undefined,
           metadata: {
             modelUsed: llmResponse.modelUsed,
             tokenUsage: llmResponse.tokenUsage,
