@@ -28,6 +28,9 @@ import { sanitizeToolArgs, sanitizeToolResult } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
+  // Store client identifier from initialize request for audit logging
+  private clientIdentifier: string = "stdio-client";
+
   constructor(
     private readonly toolRegistry: ToolRegistryService,
     @Inject(INTERFACE_LAYER_TOKEN)
@@ -43,6 +46,23 @@ export class McpServerService implements OnModuleInit {
       name: "easy-mcp-framework",
       version: "0.1.0",
     };
+  }
+
+  /**
+   * Extracts actor identifier from request for audit logging.
+   * Uses clientInfo from initialize request if available, otherwise uses stored client identifier.
+   */
+  private getActorIdentifier(request: JsonRpcRequest): string {
+    // For initialize requests, extract client identifier from clientInfo
+    if (request.method === "initialize") {
+      const params = request.params as InitializeParams | undefined;
+      if (params?.clientInfo?.name) {
+        this.clientIdentifier = params.clientInfo.name;
+        return this.clientIdentifier;
+      }
+    }
+    // For all other requests, use stored client identifier
+    return this.clientIdentifier;
   }
 
   onModuleInit() {
@@ -82,6 +102,7 @@ export class McpServerService implements OnModuleInit {
             response.error ? "failure" : "success",
             { method: request.method },
             request.id,
+            this.getActorIdentifier(request),
           );
           return response;
         case "tools/list":
@@ -92,6 +113,7 @@ export class McpServerService implements OnModuleInit {
             response.error ? "failure" : "success",
             { method: request.method },
             request.id,
+            this.getActorIdentifier(request),
           );
           return response;
         case "tools/call":
@@ -185,6 +207,8 @@ export class McpServerService implements OnModuleInit {
   ): Promise<JsonRpcResponse> {
     const params = request.params as CallToolParams | undefined;
 
+    const actorId = this.getActorIdentifier(request);
+
     if (!params) {
       logger.audit(
         "McpServerService",
@@ -192,6 +216,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         { reason: "Missing params", method: request.method },
         request.id,
+        actorId,
       );
       return createJsonRpcError(
         request.id,
@@ -207,6 +232,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         { reason: "Missing or invalid tool name", method: request.method },
         request.id,
+        actorId,
       );
       return createJsonRpcError(
         request.id,
@@ -216,6 +242,33 @@ export class McpServerService implements OnModuleInit {
     }
 
     const toolName = params.name;
+    
+    // Validate that arguments is a plain object (not array, string, etc.)
+    if (params.arguments !== undefined && params.arguments !== null) {
+      if (
+        typeof params.arguments !== "object" ||
+        Array.isArray(params.arguments)
+      ) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "Invalid arguments type - must be a plain object",
+            toolName,
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidParams,
+          "Arguments must be a plain object",
+        );
+      }
+    }
+    
     const args = params.arguments || {};
 
     // Get tool definition for schema validation
@@ -231,6 +284,7 @@ export class McpServerService implements OnModuleInit {
           method: request.method,
         },
         request.id,
+        actorId,
       );
       return createJsonRpcError(
         request.id,
@@ -257,6 +311,7 @@ export class McpServerService implements OnModuleInit {
           method: request.method,
         },
         request.id,
+        actorId,
       );
       return createJsonRpcError(
         request.id,
@@ -277,6 +332,7 @@ export class McpServerService implements OnModuleInit {
           method: request.method,
         },
         request.id,
+        actorId,
       );
 
       const toolResult = await this.toolRegistry.executeTool(toolName, args);
@@ -305,6 +361,7 @@ export class McpServerService implements OnModuleInit {
           method: request.method,
         },
         request.id,
+        actorId,
       );
 
       return createJsonRpcSuccess(request.id, result);
@@ -321,6 +378,7 @@ export class McpServerService implements OnModuleInit {
             method: request.method,
           },
           request.id,
+          actorId,
         );
         return createJsonRpcError(
           request.id,
@@ -340,6 +398,7 @@ export class McpServerService implements OnModuleInit {
             method: request.method,
           },
           request.id,
+          actorId,
         );
         // Use JSON-RPC error instead of success with isError flag
         return createJsonRpcError(
@@ -367,6 +426,7 @@ export class McpServerService implements OnModuleInit {
           method: request.method,
         },
         request.id,
+        actorId,
       );
 
       // Never expose internal error details to client

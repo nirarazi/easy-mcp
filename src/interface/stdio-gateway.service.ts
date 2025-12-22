@@ -254,7 +254,7 @@ export class StdioGatewayService implements IInterfaceLayer {
   public async sendMessage(sessionId: string, _output: unknown): Promise<void> {
     // This method is part of IInterfaceLayer but not used in stdio mode
     // Responses are sent directly via sendResponse()
-    // eslint-disable-next-line @typescript-eslint/require-await
+     
     logger.warn("StdioGatewayService", "sendMessage() called but stdio mode doesn't use sessions", {
       component: "Layer 1",
       sessionId,
