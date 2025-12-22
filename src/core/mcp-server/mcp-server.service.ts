@@ -24,7 +24,7 @@ import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolArgs, sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -334,20 +334,6 @@ export class McpServerService implements OnModuleInit {
     }
 
     try {
-      // Audit log: Tool execution started
-      logger.audit(
-        "McpServerService",
-        "tools/call",
-        "success",
-        {
-          toolName,
-          sanitizedArgs: sanitizeToolArgs(args),
-          method: request.method,
-        },
-        request.id,
-        actorId,
-      );
-
       const toolResult = await this.toolRegistry.executeTool(toolName, args);
 
       // Sanitize result to prevent sensitive data exposure
