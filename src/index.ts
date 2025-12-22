@@ -5,34 +5,32 @@ export { EasyMCP } from './EasyMCP';
 export type {
   McpConfig,
   ToolRegistrationInput,
-  LlmProviderConfig,
-  PersistenceConfig,
-  LTMConfig,
+  ServerInfo,
 } from './config/mcp-config.interface';
-
-// Message interfaces
-export type {
-  McpMessageInput,
-  McpMessageOutput,
-  McpInput,
-  McpOutput,
-} from './interface/mcp.interface';
-
-// Memory interfaces
-export type {
-  ConversationTurn,
-  IMemoryService,
-} from './memory/memory.interface';
-
-export type {
-  SessionState,
-} from './session/memory.interface';
 
 // Interface layer
 export type { IInterfaceLayer } from './interface/interface.interface';
 
-// Provider interfaces
-export type { ILlmClient } from './providers/llm-client.interface';
+// JSON-RPC interfaces
+export type {
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcError,
+} from './interface/jsonrpc.interface';
+
+export { JsonRpcErrorCode } from './interface/jsonrpc.interface';
+
+// MCP Protocol interfaces
+export type {
+  InitializeParams,
+  InitializeResult,
+  ListToolsResult,
+  McpTool,
+  CallToolParams,
+  CallToolResult,
+} from './interface/mcp-protocol.interface';
+
+export { McpErrorCode } from './interface/mcp-protocol.interface';
 
 // Tool interfaces
 export type {
@@ -47,7 +45,6 @@ export {
   ConfigurationError,
   ToolExecutionError,
   ToolNotFoundError,
-  LlmApiError,
 } from './core/errors/easy-mcp-error';
 
 // Constants (for advanced use cases)

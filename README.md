@@ -1,15 +1,15 @@
 # EasyMCP Framework
 
-A NestJS-based framework for building Model Context Protocol (MCP) servers with LLM integration, tool execution, and memory management.
+A NestJS-based framework for building standard Model Context Protocol (MCP) servers with tool execution via JSON-RPC 2.0.
 
 ## Description
 
-EasyMCP simplifies the creation of MCP (Model Context Protocol) servers by providing a clean, layered architecture that handles:
+EasyMCP simplifies the creation of MCP (Model Context Protocol) servers by providing a clean, type-safe framework that:
 
-- **LLM Integration**: Seamless integration with Google Gemini (extensible to other providers)
-- **Tool Execution**: Automatic execution of tools when LLMs call them
-- **Memory Management**: Short-term conversation history and long-term RAG (Retrieval-Augmented Generation)
+- **Standard MCP Protocol**: Implements the Model Context Protocol specification with JSON-RPC 2.0 over stdio
+- **Tool Execution**: Register and execute tools that external LLM agents can discover and call
 - **Type Safety**: Full TypeScript support with comprehensive type definitions
+- **Simple Configuration**: Minimal setup required - just define your tools and run
 
 ## Installation
 
@@ -25,21 +25,14 @@ yarn add easy-mcp-framework
 
 EasyMCP requires the following peer dependencies to be installed:
 
-**Required:**
 - `@nestjs/common` ^11.0.1
 - `@nestjs/core` ^11.0.1
 - `@nestjs/platform-express` ^11.0.1
-
-**Optional (depending on your configuration):**
-- `@google/genai` ^1.32.0 (required if using Gemini LLM provider)
-- `firebase` ^12.6.0 (required if using Firestore for persistence)
 
 Install them with:
 
 ```bash
 npm install @nestjs/common@^11.0.1 @nestjs/core@^11.0.1 @nestjs/platform-express@^11.0.1
-npm install @google/genai@^1.32.0  # If using Gemini
-npm install firebase@^12.6.0        # If using Firestore
 ```
 
 ## Quick Start
@@ -56,25 +49,6 @@ async function getUser(args: { userId: string }): Promise<string> {
 
 // Configure EasyMCP
 const config: McpConfig = {
-  persistence: {
-    type: 'FIRESTORE',
-    appId: 'my-app',
-    authToken: process.env.FIREBASE_AUTH_TOKEN,
-    config: { /* Firebase config */ },
-  },
-  llmProvider: {
-    model: 'gemini-1.5-flash',
-    apiKey: process.env.GOOGLE_API_KEY,
-    systemInstruction: 'You are a helpful assistant.',
-  },
-  ltmConfig: {
-    vectorDB: {
-      type: 'VECTOR_DB_SERVICE',
-      endpoint: 'https://your-vectordb.com',
-      collectionName: 'documents',
-    },
-    retrievalK: 3,
-  },
   tools: [
     {
       name: 'getUser',
@@ -111,56 +85,14 @@ The main configuration object passed to `EasyMCP.initialize()`:
 
 ```typescript
 interface McpConfig {
-  persistence: PersistenceConfig;
-  llmProvider: LlmProviderConfig;
-  ltmConfig: LTMConfig;
   tools: ToolRegistrationInput[];
+  serverInfo?: ServerInfo;
 }
 ```
 
-### PersistenceConfig
+### ToolRegistrationInput
 
-Configuration for short-term memory (conversation history):
-
-```typescript
-interface PersistenceConfig {
-  type: 'FIRESTORE';
-  appId: string;
-  authToken: string | null;
-  config: any; // Firebase configuration object
-}
-```
-
-### LlmProviderConfig
-
-Configuration for the LLM provider:
-
-```typescript
-interface LlmProviderConfig {
-  model: string; // e.g., 'gemini-1.5-flash'
-  apiKey: string;
-  systemInstruction: string;
-}
-```
-
-### LTMConfig
-
-Configuration for long-term memory (RAG):
-
-```typescript
-interface LTMConfig {
-  vectorDB: {
-    type: string;
-    endpoint: string;
-    collectionName: string;
-  };
-  retrievalK: number; // Number of documents to retrieve
-}
-```
-
-## Tool Registration
-
-Tools are automatically registered when passed in the `config.tools` array. Each tool must implement:
+Each tool must implement:
 
 ```typescript
 interface ToolRegistrationInput {
@@ -176,6 +108,17 @@ interface ToolRegistrationInput {
     }>;
     required?: string[];
   };
+}
+```
+
+### ServerInfo (Optional)
+
+Optional server information for MCP initialize response:
+
+```typescript
+interface ServerInfo {
+  name: string;
+  version: string;
 }
 ```
 
@@ -218,7 +161,7 @@ Initializes the EasyMCP framework with the provided configuration. Must be calle
 
 #### `static run(): Promise<void>`
 
-Starts the EasyMCP server and begins listening for messages.
+Starts the EasyMCP server and begins listening for JSON-RPC requests via stdio.
 
 #### `static getService<T>(token: string | symbol): T`
 
@@ -245,141 +188,47 @@ process.on('SIGINT', async () => {
 
 - `McpConfig` - Main configuration interface
 - `ToolRegistrationInput` - Tool definition interface
-- `McpMessageInput` - Input message format
-- `McpMessageOutput` - Output message format
-- `ConversationTurn` - Conversation history turn
-- `IMemoryService` - Memory service interface
+- `ServerInfo` - Optional server information
+- `JsonRpcRequest`, `JsonRpcResponse` - JSON-RPC 2.0 types
+- `InitializeParams`, `InitializeResult` - MCP initialize types
+- `ListToolsResult`, `McpTool` - MCP tools types
+- `CallToolParams`, `CallToolResult` - MCP tool call types
+- `ToolDefinition`, `ToolParameter`, `ToolFunction` - Tool interfaces
 - `IInterfaceLayer` - Interface layer interface
-- `ILlmClient` - LLM client interface
 
 ## Architecture
 
-EasyMCP uses a 4-layer architecture:
+EasyMCP uses a simplified architecture for standard MCP servers:
 
-1. **Interface Layer**: Handles communication (WebSockets, HTTP, etc.)
-2. **Memory Layer**: Manages short-term (conversation) and long-term (vector DB) memory
-3. **Abstraction Layer**: Core orchestration logic
-4. **Provider Layer**: Connects to LLMs (Google Gemini)
+1. **Interface Layer**: Handles JSON-RPC 2.0 communication over stdio
+2. **Core Layer**: Implements MCP protocol methods (initialize, tools/list, tools/call)
+3. **Tool Registry**: Manages tool registration and execution
 
 ### Architecture Diagram
 
 ```mermaid
 graph TB
-    Client[Client Application] -->|WebSocket/HTTP| Interface[Interface Layer<br/>IInterfaceLayer]
-    Interface -->|McpMessageInput| Core[McpServerService<br/>Layer 3 Orchestrator]
-    Core -->|getConversationHistory| Memory[Memory Service<br/>Layer 2]
-    Core -->|getLongTermContext| VectorDB[VectorDB Service<br/>RAG]
-    Core -->|generateContent| LLM[LlmProviderService<br/>Layer 4]
-    LLM -->|Gemini API| Gemini[Google Gemini]
+    MCPClient[MCP Client<br/>Claude Desktop, Cline, etc.] -->|stdio JSON-RPC| Interface[Interface Layer<br/>StdioGatewayService]
+    Interface -->|JsonRpcRequest| Core[McpServerService<br/>Core Orchestrator]
     Core -->|getTools| Registry[ToolRegistryService]
     Core -->|executeTool| Tools[User Tools]
-    Core -->|McpMessageOutput| Interface
-    Interface -->|Response| Client
-    Memory -->|Persist| Firestore[Firestore<br/>Optional]
-    VectorDB -->|Embeddings| Embedding[EmbeddingService]
+    Core -->|JsonRpcResponse| Interface
+    Interface -->|Response| MCPClient
 ```
 
-### Interface Layer Implementation
+## MCP Protocol
 
-**⚠️ Important Limitation (v0.1.0)**: The framework includes a mock `WebSocketGatewayService` that only logs messages to the console. The interface layer is currently **not easily extensible** without modifying framework source code.
+EasyMCP implements the standard Model Context Protocol specification:
 
-#### Current State
+### Supported Methods
 
-The default `WebSocketGatewayService` is a **mock implementation** suitable for:
-- ✅ Development and testing
-- ✅ Understanding the framework architecture
-- ❌ **NOT suitable for production use**
+- `initialize` - Server/client handshake, returns server capabilities
+- `tools/list` - Returns all registered tools with their schemas
+- `tools/call` - Executes a tool with provided arguments and returns the result
 
-The mock service automatically sends a test message when `start()` is called (intentional for testing).
+### Transport
 
-#### Options for Production Use
-
-**Option 1: Modify Framework Source Code (Current Workaround)**
-
-To use a custom interface layer, you'll need to:
-
-1. Fork or modify the framework source code
-2. Replace `WebSocketGatewayService` in `src/interface/websocket-gateway.service.ts` with your implementation
-3. Or modify `src/interface/interface.module.ts` to use your custom implementation
-
-Example custom interface layer:
-
-```typescript
-import { Injectable } from '@nestjs/common';
-import { IInterfaceLayer, McpMessageOutput } from 'easy-mcp-framework';
-import { McpServerService } from 'easy-mcp-framework';
-
-@Injectable()
-export class MyWebSocketInterface implements IInterfaceLayer {
-  private mcpServer: McpServerService;
-
-  constructor(mcpServer: McpServerService) {
-    this.mcpServer = mcpServer;
-  }
-
-  async start(): Promise<void> {
-    // Initialize your WebSocket server, HTTP server, or other transport
-    // Listen for incoming messages and call this.mcpServer.handleMessage()
-  }
-
-  async sendMessage(sessionId: string, output: McpMessageOutput): Promise<void> {
-    // Send the response back to the client
-  }
-}
-```
-
-**Option 2: Use Framework as Reference Implementation**
-
-If you need full control over the interface layer, consider using EasyMCP as a reference implementation and building your own MCP server using the patterns demonstrated in the framework.
-
-**Option 3: Wait for Future Versions**
-
-Future versions (v0.2.0+) will include proper extensibility for the interface layer, allowing you to provide custom implementations without modifying framework code.
-
-#### Using INTERFACE_LAYER_TOKEN
-
-The `INTERFACE_LAYER_TOKEN` is exported from the framework for advanced use cases, but currently cannot be used to override the default implementation without modifying framework source code.
-
-```typescript
-import { INTERFACE_LAYER_TOKEN } from 'easy-mcp-framework';
-// Token is available but requires framework modification to use
-```
-
-## Examples
-
-### Basic Chat Bot
-
-```typescript
-import { EasyMCP, McpConfig } from 'easy-mcp-framework';
-
-const config: McpConfig = {
-  // ... configuration
-  tools: [], // No tools needed for basic chat
-};
-
-await EasyMCP.initialize(config);
-await EasyMCP.run();
-```
-
-### Tool-Enabled Assistant
-
-```typescript
-// Define tools that interact with your application
-const tools = [
-  createUserTool,
-  updateUserTool,
-  deleteUserTool,
-  // ... more tools
-];
-
-const config: McpConfig = {
-  // ... configuration
-  tools,
-};
-
-await EasyMCP.initialize(config);
-await EasyMCP.run();
-```
+The server communicates via JSON-RPC 2.0 over stdio (standard input/output), which is the standard transport for MCP servers. This allows the server to be used with MCP clients like Claude Desktop, Cline, and other MCP-compatible tools.
 
 ## Error Handling
 
@@ -389,7 +238,6 @@ EasyMCP provides custom error classes for better error handling:
 - `ConfigurationError` - Configuration validation errors
 - `ToolExecutionError` - Tool execution failures
 - `ToolNotFoundError` - Tool not found in registry
-- `LlmApiError` - LLM API call failures (network errors, rate limits, authentication, etc.)
 
 ### Error Handling Examples
 
@@ -398,8 +246,7 @@ import {
   EasyMCP, 
   ConfigurationError, 
   ToolExecutionError, 
-  ToolNotFoundError,
-  LlmApiError 
+  ToolNotFoundError
 } from 'easy-mcp-framework';
 
 // Configuration errors
@@ -408,106 +255,23 @@ try {
 } catch (error) {
   if (error instanceof ConfigurationError) {
     console.error('Configuration error:', error.message);
-    // Handle configuration issues
-  } else {
-    console.error('Unexpected error:', error);
   }
 }
 
-// LLM API errors (handled automatically, but you can catch them)
-try {
-  const mcpServer = EasyMCP.getService<McpServerService>(McpServerService);
-  const response = await mcpServer.handleMessage({ sessionId: 'test', text: 'Hello' });
-} catch (error) {
-  if (error instanceof LlmApiError) {
-    console.error('LLM API error:', error.message);
-    console.error('Provider:', error.provider);
-    console.error('Status code:', error.statusCode);
-    console.error('Original error:', error.originalError);
-    
-    // Handle specific error types
-    if (error.statusCode === 429) {
-      // Rate limit - implement retry with backoff
-    } else if (error.statusCode === 401 || error.statusCode === 403) {
-      // Authentication error - check API key
-    }
-  }
-}
-
-// Tool execution errors
-try {
-  const toolRegistry = EasyMCP.getService<ToolRegistryService>(ToolRegistryService);
-  const result = await toolRegistry.executeTool('myTool', { arg: 'value' });
-} catch (error) {
-  if (error instanceof ToolNotFoundError) {
-    console.error('Tool not found:', error.message);
-  } else if (error instanceof ToolExecutionError) {
-    console.error('Tool execution failed:', error.message);
-    console.error('Original error:', error.originalError);
-  }
-}
+// Tool execution errors (handled automatically by MCP protocol)
+// Tools that throw errors will return error responses in the MCP format
 ```
 
-### Common Error Scenarios
-
-1. **ConfigurationError**: Invalid or missing configuration fields
-   - Check that all required fields are present
-   - Verify API keys are correct
-   - Ensure tool schemas are valid
-
-2. **LlmApiError**: LLM API call failed
-   - **401/403**: Check your API key is correct and has proper permissions
-   - **429**: Rate limit exceeded - implement retry logic with exponential backoff
-   - **500/502/503**: Server error - retry after some time
-   - **Network errors**: Check internet connection and API endpoint accessibility
-   - The framework automatically handles these errors and provides user-friendly messages
-
-3. **ToolNotFoundError**: Tool not registered or name mismatch
-   - Verify tool is in `config.tools` array
-   - Check tool name spelling matches exactly
-
-4. **ToolExecutionError**: Tool function threw an error
-   - Check the `originalError` property for details
-   - Verify tool function handles all edge cases
-   - Ensure tool returns a value (not undefined)
-
 ## Troubleshooting
-
-### VectorDB Not Returning Results
-
-If `getLongTermContext()` returns empty arrays:
-
-1. **Check VectorDB Configuration**: Verify `ltmConfig.vectorDB.endpoint` and `collectionName` are correct
-2. **Verify VectorDB Service**: Ensure your VectorDB endpoint is accessible and responding
-3. **Check Embedding Service**: VectorDB requires EmbeddingService from ProvidersModule
-4. **Review Logs**: Check console for VectorDB connection and retrieval errors
-
-### Firestore Not Persisting Data
-
-If conversation history is lost on restart:
-
-1. **Verify Persistence Type**: Ensure `config.persistence.type === 'FIRESTORE'`
-2. **Check Firebase Config**: Verify `config.persistence.config` contains valid Firebase configuration
-3. **Firebase Initialization**: Ensure Firebase is properly initialized (check console logs)
-4. **Permissions**: Verify Firestore security rules allow read/write operations
 
 ### Tools Not Executing
 
 If tools are registered but not being called:
 
 1. **Check Tool Registration**: Verify tools appear in console log during initialization
-2. **Tool Schema**: Ensure `inputSchema` matches what the LLM expects
-3. **Tool Description**: Make tool descriptions clear so LLM knows when to use them
-4. **LLM Response**: Check if LLM is returning `toolCall` in response (may need better prompts)
-
-### Interface Layer Not Working
-
-If messages aren't being received:
-
-1. **Implement IInterfaceLayer**: The default WebSocketGatewayService is a mock - implement your own
-2. **Check Service Registration**: Ensure your interface layer is registered with `INTERFACE_LAYER_TOKEN`
-3. **Message Format**: Verify messages match `McpMessageInput` interface
-4. **Session IDs**: Ensure each client has a unique session ID
+2. **Tool Schema**: Ensure `inputSchema` matches JSON Schema format
+3. **Tool Description**: Make tool descriptions clear so LLM agents know when to use them
+4. **MCP Client**: Verify your MCP client (Claude Desktop, etc.) is properly configured
 
 ### Build/Import Issues
 
@@ -517,6 +281,10 @@ If you encounter TypeScript or import errors:
 2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-framework'`
 3. **Build Output**: Check that `dist/index.js` and `dist/index.d.ts` exist after building
 4. **Module Resolution**: Ensure your `tsconfig.json` has proper module resolution settings
+
+## Examples
+
+See the `examples/` directory for complete working examples.
 
 ## Contributing
 

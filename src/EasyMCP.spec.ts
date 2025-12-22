@@ -17,25 +17,6 @@ jest.mock('@nestjs/core', () => ({
 
 describe('EasyMCP', () => {
   const validConfig: McpConfig = {
-    persistence: {
-      type: 'FIRESTORE',
-      appId: 'test-app',
-      authToken: 'test-token',
-      config: {},
-    },
-    llmProvider: {
-      model: 'gemini-1.5-flash',
-      apiKey: 'test-api-key',
-      systemInstruction: 'You are a helpful assistant.',
-    },
-    ltmConfig: {
-      vectorDB: {
-        type: 'VECTOR_DB_SERVICE',
-        endpoint: 'https://example.com',
-        collectionName: 'test-collection',
-      },
-      retrievalK: 3,
-    },
     tools: [
       {
         name: 'testTool',
@@ -65,13 +46,13 @@ describe('EasyMCP', () => {
 
   describe('initialize', () => {
     it('should validate configuration before initializing', async () => {
-      const invalidConfig = { ...validConfig, llmProvider: { ...validConfig.llmProvider, apiKey: '' } };
+      const invalidConfig = { ...validConfig, tools: [] };
       
-      await expect(EasyMCP.initialize(invalidConfig as any)).rejects.toThrow();
+      await expect(EasyMCP.initialize(invalidConfig)).rejects.toThrow('At least one tool');
     });
 
     it('should throw error if config validation fails', async () => {
-      const invalidConfig = { ...validConfig, persistence: undefined as any };
+      const invalidConfig = { ...validConfig, tools: undefined as any };
       
       await expect(EasyMCP.initialize(invalidConfig)).rejects.toThrow();
     });
@@ -128,34 +109,10 @@ describe('EasyMCP', () => {
       expect(mockToolRegistry.registerToolFromConfig).toHaveBeenCalledWith(validConfig.tools[0]);
     });
 
-    it('should handle empty tools array', async () => {
-      const { NestFactory } = require('@nestjs/core');
+    it('should throw error if tools array is empty', async () => {
       const configWithoutTools = { ...validConfig, tools: [] };
-      const mockToolRegistry = {
-        registerToolFromConfig: jest.fn(),
-      };
       
-      const mockConfigHolder = {
-        setConfig: jest.fn(),
-      };
-      
-      const mockApp = {
-        get: jest.fn((token) => {
-          if (token === CONFIG_TOKEN || token === 'MCP_CONFIG_HOLDER') {
-            return mockConfigHolder;
-          }
-          if (token === ToolRegistryService) {
-            return mockToolRegistry;
-          }
-          return null;
-        }),
-      };
-      
-      NestFactory.createApplicationContext = jest.fn().mockResolvedValue(mockApp);
-      
-      await EasyMCP.initialize(configWithoutTools);
-      
-      expect(mockToolRegistry.registerToolFromConfig).not.toHaveBeenCalled();
+      await expect(EasyMCP.initialize(configWithoutTools)).rejects.toThrow('At least one tool must be provided');
     });
 
     it('should throw error if tool registration fails', async () => {

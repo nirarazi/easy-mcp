@@ -55,8 +55,7 @@ export class EasyMCP {
 
   /**
    * Starts the core logic of the Easy MCP Framework.
-   * This typically involves starting the layer that handles incoming messages (Layer 1/3).
-   * * FIX: Defined as a static method to resolve the TS2339 error in src/main.ts.
+   * This starts the stdio JSON-RPC server to handle MCP protocol requests.
    */
   public static async run(): Promise<void> {
     if (!this.app) {
@@ -69,16 +68,13 @@ export class EasyMCP {
 
     try {
       // Retrieve the central orchestration service (Layer 3: Abstraction Core)
-      // Assuming McpServerService is the main entry point for protocol handling
       const mcpServer = this.app.get(McpServerService);
 
-      // Assume the main service has a method to start listening for client messages
-      // This is where the WebSocket or HTTP listener would typically be initialized.
-      // Replace with your actual startup method if it differs.
+      // Start listening for JSON-RPC requests via stdio
       await mcpServer.startListening();
 
       console.log(
-        "EasyMCP core services are now running and listening for client connections.",
+        "EasyMCP core services are now running and listening for JSON-RPC requests via stdio.",
       );
     } catch (error) {
       console.error("Failed to start EasyMCP core services:", error);

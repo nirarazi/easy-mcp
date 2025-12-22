@@ -42,18 +42,3 @@ export class ToolNotFoundError extends EasyMcpError {
   }
 }
 
-/**
- * Thrown when LLM API calls fail (network errors, rate limits, authentication, etc.).
- */
-export class LlmApiError extends EasyMcpError {
-  constructor(
-    message: string,
-    public readonly provider: string,
-    public readonly statusCode?: number,
-    public readonly originalError?: Error,
-  ) {
-    super(message);
-    this.name = 'LlmApiError';
-  }
-}
-
