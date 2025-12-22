@@ -1,10 +1,39 @@
 {
   "name": "easy-mcp-framework",
-  "version": "0.0.1",
-  "description": "",
+  "version": "0.1.0",
+  "description": "A NestJS-based framework for building Model Context Protocol (MCP) servers with LLM integration, tool execution, and memory management",
   "author": "",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirarazi/easy-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "ai",
+    "nestjs",
+    "framework",
+    "gemini",
+    "tools",
+    "rag",
+    "vector-db"
+  ],
+  "homepage": "https://github.com/nirarazi/easy-mcp#readme",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -20,13 +49,23 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "peerDependencies": {
     "@google/genai": "^1.32.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "firebase": "^12.6.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "firebase": "^12.6.0"
+  },
+  "peerDependenciesMeta": {
+    "firebase": {
+      "optional": true
+    },
+    "@google/genai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

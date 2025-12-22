@@ -1,0 +1,55 @@
+# Source files
+src/
+test/
+*.ts
+!*.d.ts
+
+# Configuration files
+tsconfig*.json
+nest-cli.json
+eslint.config.mjs
+.prettierrc*
+
+# Development files
+.env*
+*.log
+*.txt
+lint-errors*.txt
+tsc-errors*.txt
+
+# Build artifacts (keep dist/)
+*.map
+!dist/**/*.map
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep README.md and LICENSE)
+IMPLEMENTATION_GUIDE.md
+docs/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Node modules (already excluded by default)
+node_modules/
+
+# Temporary files
+.temp/
+.tmp/
+*.pid
+*.seed
+

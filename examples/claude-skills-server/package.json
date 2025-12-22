@@ -1,0 +1,44 @@
+{
+  "name": "claude-skills-server-example",
+  "version": "1.0.0",
+  "description": "Example MCP server that serves Claude Skills from SKILL.md files using EasyMCP Framework",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts"
+  },
+  "keywords": [
+    "mcp",
+    "claude-skills",
+    "easy-mcp",
+    "example"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "easy-mcp-framework": "file:../..",
+    "js-yaml": "^4.1.0",
+    "glob": "^11.0.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.1",
+    "@google/genai": "^1.32.0",
+    "firebase": "^12.6.0"
+  },
+  "peerDependenciesMeta": {
+    "firebase": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/glob": "^8.1.0",
+    "@types/node": "^22.10.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
+

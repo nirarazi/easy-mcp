@@ -17,7 +17,7 @@ describe("VectorDBService", () => {
         VectorDBService,
         {
           provide: VECTOR_DB_CONFIG as string,
-          useValue: { vectorDB: { endpoint: "ENDPOINT" } },
+          useValue: { vectorDB: { endpoint: "https://api.example.com", collectionName: "test-collection" }, retrievalK: 3 },
         },
         { provide: EmbeddingService, useValue: mockEmbeddingService },
       ],

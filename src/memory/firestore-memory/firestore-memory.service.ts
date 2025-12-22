@@ -1,6 +1,6 @@
 // src/memory/firestore-memory/firestore-memory.service.ts
 
-import { Injectable } from "@nestjs/common";
+import { Injectable, Inject, Optional } from "@nestjs/common";
 // 1. Import specific functions for initialization
 import {
   initializeApp,
@@ -18,34 +18,39 @@ import {
   setDoc,
 } from "firebase/firestore";
 // NOTE: You only need to import the Firestore service here.
-import { PersistenceConfig } from "../../config/mcp-config.interface";
+import type { McpConfig } from "../../config/mcp-config.interface";
 import { SessionState } from "../../session/memory.interface";
+import { IMemoryService, ConversationTurn } from "../memory.interface";
+import { CONFIG_TOKEN } from "../../config/constants";
+import { VectorDBService } from "../vectordb/vectordb.service";
+import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
 
 /**
  * Service to manage Short-Term Memory (STM) using Firestore.
  * Handles persistence and retrieval of the SessionState (History Buffer).
  */
 @Injectable()
-export class FirestoreMemoryService {
+export class FirestoreMemoryService implements IMemoryService {
   private firestore: Firestore;
   private app: FirebaseApp;
   private sessionsCollection: string = "mcp-sessions"; // Hardcoded collection name
+  private config: McpConfig;
 
-  // NOTE: In a full NestJS implementation, the config would be injected here,
-  // typically via a custom provider in memory.module.ts.
-  constructor(/* @Inject('PERSISTENCE_CONFIG') config: PersistenceConfig */) {
-    // We'll mock the config injection for simplicity here:
-    const config: PersistenceConfig = {
-      type: "FIRESTORE",
-      config: {}, // Assuming external code provides the actual config object
-      appId: "default-mcp-app",
-      authToken: null,
-    };
+  constructor(
+    @Inject(CONFIG_TOKEN) config: McpConfig,
+    @Optional() @Inject(VectorDBService) private readonly vectorDBService?: VectorDBService,
+  ) {
+    this.config = config;
+    const persistenceConfig = config.persistence;
+
+    if (persistenceConfig.type !== "FIRESTORE") {
+      throw new Error("FirestoreMemoryService requires persistence.type to be 'FIRESTORE'");
+    }
 
     // 1. Initialize the App using the function import
     if (getApps().length === 0) {
       // If no apps are initialized, initialize a new one
-      this.app = initializeApp(config.config as FirebaseOptions);
+      this.app = initializeApp(persistenceConfig.config as FirebaseOptions);
     } else {
       // If an app is already initialized (e.g., by another module), reuse the default one
       this.app = getApp();
@@ -53,6 +58,7 @@ export class FirestoreMemoryService {
 
     // 2. Retrieve the Firestore service instance using getFirestore(app)
     this.firestore = getFirestore(this.app);
+    console.log("[Layer 2: Session & Memory] FirestoreMemoryService initialized.");
   }
 
   /**
@@ -98,5 +104,99 @@ export class FirestoreMemoryService {
 
     // Use set with merge: true to update fields without deleting the entire document
     await setDoc(docRef, state as any, { merge: true });
+  }
+
+  /**
+   * Implements IMemoryService.getConversationHistory
+   */
+  async getConversationHistory(sessionId: string): Promise<ConversationTurn[]> {
+    const state = await this.getSessionState(sessionId);
+    // Filter and map to ensure compatibility with the ConversationTurn interface.
+    // Only process turns with supported roles to guard against invalid data from the database.
+    return (state.history || [])
+      .filter(turn => ["user", "model", "system", "tool"].includes(turn.role))
+      .map(turn => {
+        // Convert "system" role to "model" for compatibility with LLM providers
+        const role = turn.role === "system" ? "model" : turn.role;
+        
+        // Convert Firestore Timestamp to Date if necessary
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        const rawTs: unknown = (turn as { timestamp?: unknown }).timestamp;
+        let timestamp: Date;
+        if (rawTs instanceof Date) {
+          timestamp = rawTs;
+        } else if (rawTs && typeof rawTs === 'object' && 'toDate' in rawTs && typeof (rawTs as { toDate?: () => Date }).toDate === 'function') {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          timestamp = (rawTs as { toDate: () => Date }).toDate();
+        } else if (typeof rawTs === 'string' || typeof rawTs === 'number') {
+          timestamp = new Date(rawTs);
+        } else {
+          timestamp = new Date();
+        }
+        
+        return {
+          role: role,
+          content: turn.content,
+          timestamp,
+          toolResult: turn.toolResult,
+        };
+      });
+  }
+
+  /**
+   * Implements IMemoryService.getLongTermContext
+   */
+  async getLongTermContext(sessionId: string, query: string): Promise<string[]> {
+    // If VectorDBService is available, use it for RAG retrieval
+    if (this.vectorDBService && query && query.trim().length > 0) {
+      try {
+        const retrievalK = this.config.ltmConfig?.retrievalK || 3;
+        const ragDocuments = await this.vectorDBService.retrieveRelevantFacts(query, retrievalK);
+        
+        // Convert RagDocument[] to string[] format expected by the interface
+        return ragDocuments.map(doc => {
+          // Format: "text (source: source, score: score)"
+          return `${doc.text} (source: ${doc.source}, score: ${doc.score.toFixed(3)})`;
+        });
+      } catch (error) {
+        // Sanitize error message to prevent sensitive data exposure
+        const sanitizedError = sanitizeErrorMessage(error);
+        console.error("[FirestoreMemoryService] VectorDB retrieval failed:", sanitizedError);
+        // Fall back to empty array if VectorDB fails
+        return [];
+      }
+    }
+    
+    // Return empty array if VectorDB is not available or query is empty
+    return [];
+  }
+
+  /**
+   * Implements IMemoryService.addTurn
+   */
+  async addTurn(
+    sessionId: string,
+    userMessage: string,
+    modelResponse: string,
+  ): Promise<void> {
+    const state = await this.getSessionState(sessionId);
+    
+    // Ensure history exists for new/malformed sessions
+    state.history = state.history ?? [];
+    
+    // Add user and model turns to history
+    state.history.push({
+      role: "user",
+      content: userMessage,
+      timestamp: new Date(),
+    });
+    state.history.push({
+      role: "model",
+      content: modelResponse,
+      timestamp: new Date(),
+    });
+
+    // Save updated state to Firestore
+    await this.saveSessionState(state);
   }
 }

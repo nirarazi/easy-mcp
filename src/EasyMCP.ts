@@ -5,6 +5,8 @@ import { McpConfig } from "./config/mcp-config.interface";
 import { CONFIG_TOKEN } from "./config/constants";
 import { McpServerService } from "./core/mcp-server/mcp-server.service"; // Assuming this service is the entry point
 import { ConfigHolderService } from "./config/config-holder.service";
+import { ConfigValidator } from "./config/config-validator";
+import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
 
@@ -22,6 +24,9 @@ export class EasyMCP {
       return;
     }
 
+    // 0. Validate configuration before proceeding
+    ConfigValidator.validate(config);
+
     // 1. Create the NestJS application context
     const moduleRef = await NestFactory.createApplicationContext(AppModule);
     this.app = moduleRef;
@@ -30,6 +35,20 @@ export class EasyMCP {
     // Retrieve the ConfigHolderService using its token and assert its type
     const configHolder = moduleRef.get<ConfigHolderService>(CONFIG_TOKEN);
     configHolder.setConfig(config);
+
+    // 3. Auto-register tools from config
+    if (config.tools && config.tools.length > 0) {
+      const toolRegistry = moduleRef.get<ToolRegistryService>(ToolRegistryService);
+      for (const tool of config.tools) {
+        try {
+          toolRegistry.registerToolFromConfig(tool);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
+        }
+      }
+      console.log(`Registered ${config.tools.length} tool(s) from configuration.`);
+    }
 
     console.log("EasyMCP Framework initialized successfully.");
   }
@@ -79,5 +98,28 @@ export class EasyMCP {
     }
     // NestJS uses the token/class to look up the provider
     return this.app.get<T>(token);
+  }
+
+  /**
+   * Gracefully shuts down the EasyMCP framework.
+   * Closes the NestJS application context and cleans up resources.
+   * Should be called when the application is terminating (e.g., on SIGTERM, SIGINT).
+   */
+  public static async shutdown(): Promise<void> {
+    if (!this.app) {
+      console.warn("EasyMCP is not initialized. Nothing to shutdown.");
+      return;
+    }
+
+    console.log("Shutting down EasyMCP framework...");
+
+    try {
+      await this.app.close();
+      this.app = null as any; // Clear the reference
+      console.log("EasyMCP framework shut down successfully.");
+    } catch (error) {
+      console.error("Error during EasyMCP shutdown:", error);
+      throw error;
+    }
   }
 }
