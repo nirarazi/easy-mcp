@@ -1,12 +1,13 @@
 import { EasyMCP } from "./EasyMCP";
 import { McpConfig } from "./config/mcp-config.interface";
+import { PACKAGE_NAME, VERSION } from "./config/version";
 
 // This is a minimal mock config for startup, real config comes from client
 const mockConfig: McpConfig = {
   tools: [],
   serverInfo: {
-    name: "easy-mcp-framework",
-    version: "0.1.0",
+    name: PACKAGE_NAME,
+    version: VERSION,
   },
 };
 
