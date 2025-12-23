@@ -135,6 +135,25 @@ describe("McpServerService", () => {
       expect(response.result.serverInfo).toBeDefined();
     });
 
+    it("should reject unsupported protocol version", async () => {
+      const request: JsonRpcRequest = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-10-01", // Unsupported version
+        },
+      };
+
+      const response = await service.handleRequest(request);
+
+      expect(response.jsonrpc).toBe("2.0");
+      expect(response.id).toBe(1);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(response.error?.message).toContain("Unsupported protocol version");
+    });
+
     it("should handle tools/list request", async () => {
       const request: JsonRpcRequest = {
         jsonrpc: "2.0",

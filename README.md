@@ -216,15 +216,46 @@ graph TB
     Interface -->|Response| MCPClient
 ```
 
-## MCP Protocol
+## MCP Protocol Compliance
 
-EasyMCP implements the standard Model Context Protocol specification:
+EasyMCP implements the standard Model Context Protocol (MCP) specification version **2024-11-05**.
+
+### Protocol Version
+
+- **Supported Version**: `2024-11-05`
+- **Validation**: The framework validates that clients use the supported protocol version during initialization
+- **Error Handling**: Unsupported protocol versions are rejected with a clear error message
 
 ### Supported Methods
 
-- `initialize` - Server/client handshake, returns server capabilities
-- `tools/list` - Returns all registered tools with their schemas
-- `tools/call` - Executes a tool with provided arguments and returns the result
+EasyMCP implements the following MCP protocol methods:
+
+- **`initialize`** - Server/client handshake, returns server capabilities and protocol version
+  - Validates client protocol version
+  - Returns server capabilities (currently supports tools)
+  - Returns server information (name and version)
+  
+- **`tools/list`** - Returns all registered tools with their JSON Schema definitions
+  - Returns array of tool definitions in MCP format
+  - Each tool includes name, description, and inputSchema
+  
+- **`tools/call`** - Executes a tool with provided arguments and returns the result
+  - Validates tool arguments against schema
+  - Executes tool function
+  - Returns result in MCP content format
+  - Handles errors according to MCP error code specification
+
+### Error Codes
+
+EasyMCP uses standard JSON-RPC 2.0 and MCP error codes:
+
+- `-32700` - Parse error
+- `-32600` - Invalid request
+- `-32601` - Method not found
+- `-32602` - Invalid params
+- `-32603` - Internal error
+- `-32001` - Tool not found (MCP-specific)
+- `-32002` - Tool execution error (MCP-specific)
 
 ### Transport
 
@@ -243,14 +274,24 @@ MCP_USE_CONTENT_LENGTH=1
 
 This enables the MCP-specified Content-Length header format, which some clients may not parse correctly.
 
+### Limitations
+
+- **Transport**: Currently only stdio transport is supported. WebSocket and HTTP transports are not available.
+- **Capabilities**: Only tools capability is implemented. Resources and prompts capabilities are not yet supported.
+- **Protocol Version**: Only protocol version 2024-11-05 is supported. Older or newer versions will be rejected.
+
+For more information on testing EasyMCP with real MCP clients, see [Integration Testing Guide](docs/INTEGRATION_TESTING.md).
+
 ## Error Handling
 
-EasyMCP provides custom error classes for better error handling:
+EasyMCP provides comprehensive error handling with custom error classes and clear error messages.
 
-- `EasyMcpError` - Base error class for all framework errors
-- `ConfigurationError` - Configuration validation errors
-- `ToolExecutionError` - Tool execution failures
-- `ToolNotFoundError` - Tool not found in registry
+### Error Classes
+
+- **`EasyMcpError`** - Base error class for all framework errors
+- **`ConfigurationError`** - Configuration validation errors (thrown during `initialize()`)
+- **`ToolExecutionError`** - Tool execution failures (wrapped and returned as MCP error)
+- **`ToolNotFoundError`** - Tool not found in registry (returned as MCP error code -32001)
 
 ### Error Handling Examples
 
@@ -262,18 +303,49 @@ import {
   ToolNotFoundError
 } from 'easy-mcp-framework';
 
-// Configuration errors
+// Configuration errors - caught during initialization
 try {
   await EasyMCP.initialize(config);
 } catch (error) {
   if (error instanceof ConfigurationError) {
     console.error('Configuration error:', error.message);
+    // Example: "Tool 'myTool': name must be a non-empty string"
   }
 }
 
-// Tool execution errors (handled automatically by MCP protocol)
-// Tools that throw errors will return error responses in the MCP format
+// Tool execution errors - handled automatically by MCP protocol
+// When a tool throws an error, it's automatically converted to an MCP error response
+// The error is logged to stderr and returned to the client with error code -32002
 ```
+
+### Common Error Scenarios
+
+**Configuration Errors:**
+- Missing required fields (tools array, tool name, description, etc.)
+- Invalid tool schemas (unsupported types, missing properties)
+- Invalid serverInfo format
+
+**Tool Execution Errors:**
+- Tool function throws an exception → Returns MCP error code -32002
+- Tool not found → Returns MCP error code -32001
+- Invalid tool arguments → Returns JSON-RPC error code -32602 (Invalid Params)
+
+**Protocol Errors:**
+- Unsupported protocol version → Returns error code -32602 with clear message
+- Invalid JSON-RPC request → Returns error code -32600 (Invalid Request)
+- Unknown method → Returns error code -32601 (Method Not Found)
+
+### Error Message Format
+
+All error messages are designed to be helpful for debugging:
+- Include the context (tool name, parameter name, etc.)
+- Provide suggestions when possible
+- Never expose internal implementation details to clients
+
+Example error messages:
+- `"Tool 'getUser': property 'userId' must have a description"`
+- `"Unsupported protocol version: 2024-10-01. Supported version: 2024-11-05"`
+- `"Missing required parameter: userId"`
 
 ## Troubleshooting
 
@@ -285,6 +357,7 @@ If tools are registered but not being called:
 2. **Tool Schema**: Ensure `inputSchema` matches JSON Schema format
 3. **Tool Description**: Make tool descriptions clear so LLM agents know when to use them
 4. **MCP Client**: Verify your MCP client (Claude Desktop, etc.) is properly configured
+5. **Enable Debug Logging**: Set `DEBUG=1` environment variable to see detailed protocol messages
 
 ### Build/Import Issues
 
@@ -294,6 +367,38 @@ If you encounter TypeScript or import errors:
 2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-framework'`
 3. **Build Output**: Check that `dist/index.js` and `dist/index.d.ts` exist after building
 4. **Module Resolution**: Ensure your `tsconfig.json` has proper module resolution settings
+
+### Protocol Version Errors
+
+If you see "Unsupported protocol version" errors:
+
+1. **Check Client Version**: Ensure your MCP client uses protocol version `2024-11-05`
+2. **Update Client**: Update your MCP client to the latest version
+3. **Debug Mode**: Set `DEBUG=1` to see detailed protocol version information
+
+### Integration Issues
+
+If your server doesn't work with MCP clients:
+
+1. **Check Configuration**: Verify your MCP client configuration is correct
+2. **Test Server**: Run your server script directly to verify it starts correctly
+3. **Review Logs**: Check stderr output for initialization and error messages
+4. **Integration Guide**: See [Integration Testing Guide](docs/INTEGRATION_TESTING.md) for detailed setup instructions
+5. **Examples**: Check [examples/claude-desktop-integration](examples/claude-desktop-integration) and [examples/cursor-integration](examples/cursor-integration) for client-specific setup
+
+### Debug Mode
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+DEBUG=1 node your-server.js
+```
+
+Debug mode provides detailed information about:
+- Protocol message flow
+- Tool execution details
+- Protocol version validation
+- Argument validation
 
 ## Examples
 

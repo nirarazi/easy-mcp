@@ -96,7 +96,7 @@ export class NestjsStderrLogger implements LoggerService {
         messageStr = message;
       } else if (typeof message === 'object' && message !== null && !Array.isArray(message)) {
         // Handle object messages - extract message field and sanitize metadata
-        const { message: msg, ...rest } = message as any;
+        const { message: msg, ...rest } = message;
         
         // Extract message string safely
         if (msg !== undefined) {

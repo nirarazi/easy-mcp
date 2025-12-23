@@ -40,12 +40,13 @@ export class McpServerService implements OnModuleInit {
     private readonly configHolder: ConfigHolderService,
   ) {}
 
-  private getServerInfo() {
+  private getServerInfo(): { name: string; version: string } {
     const config = this.configHolder.getConfig();
-    return config.serverInfo || {
+    const defaultInfo: { name: string; version: string } = {
       name: "easy-mcp-framework",
       version: "0.1.0",
     };
+    return (config.serverInfo as { name: string; version: string } | undefined) ?? defaultInfo;
   }
 
   /**
@@ -97,11 +98,29 @@ export class McpServerService implements OnModuleInit {
   public async handleRequest(
     request: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
+    const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+    
+    if (isDebugMode) {
+      logger.debug("McpServerService", "Received JSON-RPC request", {
+        method: request.method,
+        requestId: request.id,
+        hasParams: !!request.params,
+      });
+    }
+
     try {
       let response: JsonRpcResponse;
       switch (request.method) {
         case "initialize":
-          response = await this.handleInitialize(request);
+          response = this.handleInitialize(request);
+          if (isDebugMode) {
+            const initResult = response.result as InitializeResult | undefined;
+            logger.debug("McpServerService", "Initialize response", {
+              protocolVersion: initResult?.protocolVersion,
+              hasError: !!response.error,
+              errorCode: response.error?.code,
+            });
+          }
           logger.audit(
             "McpServerService",
             "initialize",
@@ -112,7 +131,14 @@ export class McpServerService implements OnModuleInit {
           );
           return response;
         case "tools/list":
-          response = await this.handleListTools(request);
+          response = this.handleListTools(request);
+          if (isDebugMode) {
+            const listResult = response.result as ListToolsResult | undefined;
+            logger.debug("McpServerService", "Tools/list response", {
+              toolCount: listResult?.tools?.length || 0,
+              hasError: !!response.error,
+            });
+          }
           logger.audit(
             "McpServerService",
             "tools/list",
@@ -157,10 +183,11 @@ export class McpServerService implements OnModuleInit {
   /**
    * Handles the initialize request.
    * Returns server capabilities and protocol version.
+   * Validates that the client's protocol version is supported.
    */
-  private async handleInitialize(
+  private handleInitialize(
     request: JsonRpcRequest,
-  ): Promise<JsonRpcResponse> {
+  ): JsonRpcResponse {
     const params = request.params as InitializeParams | undefined;
 
     if (!params || typeof params.protocolVersion !== "string") {
@@ -171,8 +198,33 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    // Validate protocol version - currently only 2024-11-05 is supported
+    const SUPPORTED_PROTOCOL_VERSION = "2024-11-05";
+    if (params.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+      logger.warn("McpServerService", "Unsupported protocol version", {
+        component: "Layer 3",
+        // Don't log client-supplied protocolVersion to avoid logging sensitive data
+        supportedVersion: SUPPORTED_PROTOCOL_VERSION,
+        requestId: request.id,
+      });
+      const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+      if (isDebugMode) {
+        logger.debug("McpServerService", "Protocol version mismatch", {
+          // Don't log client-supplied data (protocolVersion, clientInfo) to avoid logging sensitive information
+          supported: SUPPORTED_PROTOCOL_VERSION,
+          // Only log safe metadata: client name if available (already extracted and stored)
+          clientName: params.clientInfo?.name || 'unknown',
+        });
+      }
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        `Unsupported protocol version: ${params.protocolVersion}. Supported version: ${SUPPORTED_PROTOCOL_VERSION}. Please update your client to use protocol version ${SUPPORTED_PROTOCOL_VERSION}.`,
+      );
+    }
+
     const result: InitializeResult = {
-      protocolVersion: "2024-11-05",
+      protocolVersion: SUPPORTED_PROTOCOL_VERSION,
       capabilities: {
         tools: {},
       },
@@ -186,9 +238,9 @@ export class McpServerService implements OnModuleInit {
    * Handles the tools/list request.
    * Returns all registered tools in MCP format.
    */
-  private async handleListTools(
+  private handleListTools(
     request: JsonRpcRequest,
-  ): Promise<JsonRpcResponse> {
+  ): JsonRpcResponse {
     const tools = this.toolRegistry.getToolSchemasForLLM();
     const mcpTools: McpTool[] = tools.map((tool) => ({
       name: tool.function.name,
@@ -326,15 +378,25 @@ export class McpServerService implements OnModuleInit {
         request.id,
         actorId,
       );
+      const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+      if (isDebugMode) {
+        logger.debug("McpServerService", "Tool argument validation failed", {
+          toolName,
+          validationError,
+          providedArgs: Object.keys(args),
+          expectedParams: Object.keys(tool.parameters),
+          requiredParams: tool.required,
+        });
+      }
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        validationError,
+        `Tool '${toolName}' validation failed: ${validationError}. Check the tool schema and ensure all required parameters are provided.`,
       );
     }
 
     try {
-      const toolResult = await this.toolRegistry.executeTool(toolName, args);
+      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args);
 
       // Sanitize result to prevent sensitive data exposure
       const sanitizedResult = sanitizeToolResult(toolResult);
