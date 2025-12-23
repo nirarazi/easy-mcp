@@ -1,8 +1,8 @@
 {
-  "name": "easy-mcp-framework",
+  "name": "easy-mcp-nest",
   "version": "0.1.0",
   "description": "A NestJS-based framework for building standard Model Context Protocol (MCP) servers with tool execution via JSON-RPC 2.0",
-  "author": "",
+  "author": "Nir Arazi",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
