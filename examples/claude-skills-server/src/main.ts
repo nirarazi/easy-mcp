@@ -1,7 +1,7 @@
 import { EasyMCP, McpConfig } from 'easy-mcp-framework';
 import { loadSkillsFromDirectory } from './skill-loader';
 import { parseSkillsToTools } from './skill-parser';
-import { join } from 'path';
+import { join, basename } from 'path';
 
 /**
  * Main entry point for the Claude Skills MCP Server
@@ -11,10 +11,13 @@ async function bootstrap() {
   const skillsDir = process.env.SKILLS_DIR || join(process.cwd(), 'skills');
 
   // MCP protocol requires all non-JSON-RPC output to go to stderr, not stdout
+  // Sanitize directory path to avoid exposing full filesystem structure
+  const sanitizedDir = basename(skillsDir) || '[directory]';
+  
   console.error('='.repeat(60));
   console.error('Claude Skills MCP Server');
   console.error('='.repeat(60));
-  console.error(`Skills directory: ${skillsDir}`);
+  console.error(`Skills directory: ${sanitizedDir}`);
   console.error('='.repeat(60));
 
   // Load skills from directory

@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'fs/promises';
-import { join, extname } from 'path';
+import { join, extname, basename } from 'path';
 import * as yaml from 'js-yaml';
 import { glob } from 'glob';
 
@@ -50,11 +50,13 @@ function parseFrontmatter(content: string): { frontmatter: any; content: string 
   const markdownContent = match[2];
 
   try {
-    // Use safe schema to prevent prototype pollution and unsafe type parsing
-    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.DEFAULT_SCHEMA }) as any;
+    // Use CORE_SCHEMA to prevent prototype pollution and unsafe type parsing
+    // CORE_SCHEMA is safer than DEFAULT_SCHEMA as it only allows safe core types
+    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.CORE_SCHEMA }) as any;
     return { frontmatter, content: markdownContent.trim() };
   } catch (error) {
-    throw new Error(`Failed to parse YAML frontmatter: ${error instanceof Error ? error.message : String(error)}`);
+    // Sanitize error message to prevent information leakage
+    throw new Error('Failed to parse YAML frontmatter: Invalid YAML syntax');
   }
 }
 
@@ -149,7 +151,9 @@ export async function loadSkillsFromDirectory(directoryPath: string): Promise<Lo
   }
 
   // MCP protocol requires all non-JSON-RPC output to go to stderr, not stdout
-  console.error(`Found ${skillFiles.length} skill file(s) in ${directoryPath}`);
+  // Sanitize directory path to avoid exposing full filesystem structure
+  const sanitizedDir = basename(directoryPath) || '[directory]';
+  console.error(`Found ${skillFiles.length} skill file(s) in ${sanitizedDir}`);
 
   const skills: LoadedSkill[] = [];
   const errors: string[] = [];
@@ -159,11 +163,15 @@ export async function loadSkillsFromDirectory(directoryPath: string): Promise<Lo
     try {
       const skill = await loadSkillFile(filePath);
       skills.push(skill);
-      console.error(`Loaded skill: ${skill.metadata.name} from ${filePath}`);
+      // Sanitize file path to avoid exposing full filesystem structure
+      const sanitizedPath = basename(filePath) || '[file]';
+      console.error(`Loaded skill: ${skill.metadata.name} from ${sanitizedPath}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(errorMsg);
-      console.error(`Error loading skill from ${filePath}: ${errorMsg}`);
+      // Sanitize file path to avoid exposing full filesystem structure
+      const sanitizedPath = basename(filePath) || '[file]';
+      console.error(`Error loading skill from ${sanitizedPath}: ${errorMsg}`);
     }
   }
 

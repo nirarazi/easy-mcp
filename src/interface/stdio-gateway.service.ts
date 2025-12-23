@@ -141,16 +141,45 @@ export class StdioGatewayService implements IInterfaceLayer {
       return;
     }
 
-    // Check for Content-Length header
-    const contentLengthMatch = line.match(/^Content-Length:\s*(\d+)/i);
+    // Check for Content-Length header with improved validation
+    // Handle both CRLF and LF line endings, and validate header format strictly
+    const trimmedLine = line.trim();
+    const contentLengthMatch = trimmedLine.match(/^Content-Length:\s*(\d+)\s*$/i);
+    
     if (contentLengthMatch) {
-      const contentLength = parseInt(contentLengthMatch[1], 10);
-
-      // Validate Content-Length value
-      if (isNaN(contentLength) || contentLength < 0) {
-        logger.error("StdioGatewayService", "Invalid Content-Length value", {
+      // Validate that we're not already processing a message
+      if (this.pendingContentLength !== null) {
+        logger.error("StdioGatewayService", "Received Content-Length header while already processing a message", {
           component: "Layer 1",
-          contentLength: contentLengthMatch[1],
+          existingLength: this.pendingContentLength,
+          newLength: contentLengthMatch[1],
+        });
+        // Reset state to prevent confusion
+        this.pendingContentLength = null;
+        this.messageBuffer = Buffer.alloc(0);
+        if (this.contentLengthTimeout) {
+          clearTimeout(this.contentLengthTimeout);
+          this.contentLengthTimeout = null;
+        }
+      }
+
+      const contentLengthStr = contentLengthMatch[1];
+      const contentLength = parseInt(contentLengthStr, 10);
+
+      // Validate Content-Length value is a valid positive integer
+      if (isNaN(contentLength) || contentLength < 0 || !Number.isInteger(contentLength)) {
+        logger.error("StdioGatewayService", "Invalid Content-Length value (must be non-negative integer)", {
+          component: "Layer 1",
+          receivedValue: contentLengthStr,
+        });
+        return;
+      }
+
+      // Validate that the string representation matches the parsed integer (prevents overflow)
+      if (contentLength.toString() !== contentLengthStr) {
+        logger.error("StdioGatewayService", "Content-Length value overflow or invalid format", {
+          component: "Layer 1",
+          receivedValue: contentLengthStr,
         });
         return;
       }
@@ -174,6 +203,8 @@ export class StdioGatewayService implements IInterfaceLayer {
       }
 
       // Start accumulating message bytes
+      // Note: The MCP spec requires CRLF CRLF after the header, but readline
+      // will have already consumed the line ending, so we start accumulating on the next line
       this.pendingContentLength = contentLength;
       this.messageBuffer = Buffer.alloc(0);
 
@@ -341,17 +372,94 @@ export class StdioGatewayService implements IInterfaceLayer {
    * headers, so newline-delimited JSON is the default for better compatibility.
    */
   private sendResponse(response: JsonRpcResponse): void {
-    const json = JSON.stringify(response);
-    const useContentLength = process.env.MCP_USE_CONTENT_LENGTH === "1";
+    try {
+      const json = JSON.stringify(response);
+      const useContentLength = process.env.MCP_USE_CONTENT_LENGTH === "1";
 
-    if (useContentLength) {
-      // MCP spec framing: Content-Length header + CRLF CRLF + body
-      const contentLength = Buffer.byteLength(json, "utf8");
-      const message = `Content-Length: ${contentLength}\r\n\r\n${json}`;
-      process.stdout.write(message);
-    } else {
-      // Default: newline-delimited JSON (better client compatibility)
-      process.stdout.write(json + "\n");
+      if (useContentLength) {
+        // MCP spec framing: Content-Length header + CRLF CRLF + body
+        // Validate JSON can be stringified and is within size limits
+        const contentLength = Buffer.byteLength(json, "utf8");
+        
+        if (contentLength > MAX_MESSAGE_SIZE_BYTES) {
+          logger.error("StdioGatewayService", "Response exceeds maximum size for Content-Length framing", {
+            component: "Layer 1",
+            contentLength,
+            maxAllowed: MAX_MESSAGE_SIZE_BYTES,
+          });
+          // Fallback to error response if original response is too large
+          const errorResponse = createJsonRpcError(
+            response.id,
+            JsonRpcErrorCode.InternalError,
+            "Response too large",
+          );
+          const errorJson = JSON.stringify(errorResponse);
+          const errorLength = Buffer.byteLength(errorJson, "utf8");
+          const errorMessage = `Content-Length: ${errorLength}\r\n\r\n${errorJson}`;
+          process.stdout.write(errorMessage);
+          return;
+        }
+
+        // Validate contentLength is a valid positive integer
+        if (!Number.isInteger(contentLength) || contentLength < 0) {
+          logger.error("StdioGatewayService", "Invalid content length calculated", {
+            component: "Layer 1",
+            contentLength,
+          });
+          return;
+        }
+
+        // MCP spec requires exact CRLF CRLF separator
+        const message = `Content-Length: ${contentLength}\r\n\r\n${json}`;
+        process.stdout.write(message);
+      } else {
+        // Default: newline-delimited JSON (better client compatibility)
+        // Validate size before sending
+        const messageSize = Buffer.byteLength(json, "utf8");
+        if (messageSize > MAX_MESSAGE_SIZE_BYTES) {
+          logger.error("StdioGatewayService", "Response exceeds maximum size for newline-delimited JSON", {
+            component: "Layer 1",
+            messageSize,
+            maxAllowed: MAX_MESSAGE_SIZE_BYTES,
+          });
+          // Fallback to error response
+          const errorResponse = createJsonRpcError(
+            response.id,
+            JsonRpcErrorCode.InternalError,
+            "Response too large",
+          );
+          process.stdout.write(JSON.stringify(errorResponse) + "\n");
+          return;
+        }
+        process.stdout.write(json + "\n");
+      }
+    } catch (error) {
+      // Handle JSON serialization errors or write failures
+      logger.error("StdioGatewayService", "Failed to send response", {
+        component: "Layer 1",
+        error: sanitizeErrorMessage(error),
+      });
+      // Try to send a minimal error response if possible
+      try {
+        const errorResponse = createJsonRpcError(
+          response?.id || null,
+          JsonRpcErrorCode.InternalError,
+          "Internal error",
+        );
+        const errorJson = JSON.stringify(errorResponse);
+        const useContentLength = process.env.MCP_USE_CONTENT_LENGTH === "1";
+        if (useContentLength) {
+          const errorLength = Buffer.byteLength(errorJson, "utf8");
+          process.stdout.write(`Content-Length: ${errorLength}\r\n\r\n${errorJson}`);
+        } else {
+          process.stdout.write(errorJson + "\n");
+        }
+      } catch {
+        // If we can't even send an error response, log and continue
+        logger.error("StdioGatewayService", "Failed to send error response", {
+          component: "Layer 1",
+        });
+      }
     }
   }
 

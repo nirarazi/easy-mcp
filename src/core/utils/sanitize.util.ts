@@ -145,3 +145,32 @@ export function sanitizeErrorMessage(error: unknown): string {
   return 'An unknown error occurred';
 }
 
+/**
+ * Sanitizes file paths to prevent sensitive information exposure.
+ * Returns only the filename or a relative path, removing absolute paths and user directories.
+ * @param filePath The file path to sanitize
+ * @returns A sanitized file path
+ */
+export function sanitizeFilePath(filePath: string): string {
+  if (!filePath || typeof filePath !== 'string') {
+    return '[invalid path]';
+  }
+
+  try {
+    // Extract just the filename to avoid exposing directory structure
+    const pathParts = filePath.split(/[/\\]/);
+    const filename = pathParts[pathParts.length - 1];
+    
+    // If filename is reasonable length, return it
+    if (filename && filename.length < 100) {
+      return filename;
+    }
+    
+    // Otherwise return a truncated version
+    return filename ? `${filename.substring(0, 50)}...` : '[path]';
+  } catch {
+    // If path parsing fails, return a generic placeholder
+    return '[path]';
+  }
+}
+
