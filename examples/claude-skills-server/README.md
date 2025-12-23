@@ -201,6 +201,47 @@ The server handles various error scenarios:
 - Check that the API key has proper permissions
 - Ensure network connectivity to Google's API
 
+### MCP Client Compatibility
+
+**Default Mode: Newline-Delimited JSON**
+
+By default, the server uses newline-delimited JSON (one JSON-RPC message per line) for maximum compatibility with MCP clients including Cursor and Claude Desktop.
+
+**Content-Length Framing Mode (Optional)**
+
+If you need strict MCP protocol compliance with Content-Length framing, set the environment variable:
+```bash
+MCP_USE_CONTENT_LENGTH=1
+```
+
+**Configuration Examples:**
+
+**Cursor:**
+```json
+{
+  "mcpServers": {
+    "claude-skills-server": {
+      "command": "node",
+      "args": ["/path/to/dist/main.js"]
+    }
+  }
+}
+```
+
+**Claude Desktop:**
+```json
+{
+  "mcpServers": {
+    "claude-skills-server": {
+      "command": "node",
+      "args": ["/path/to/dist/main.js"]
+    }
+  }
+}
+```
+
+**Note:** The default newline-delimited JSON mode works with both Cursor and Claude Desktop without any additional configuration.
+
 ## Extending the Example
 
 ### Custom Skill Executors
