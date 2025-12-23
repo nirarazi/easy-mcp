@@ -51,7 +51,7 @@ function parseFrontmatter(content: string): { frontmatter: any; content: string 
 
   try {
     // Use safe schema to prevent prototype pollution and unsafe type parsing
-    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.DEFAULT_SAFE_SCHEMA }) as any;
+    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.DEFAULT_SCHEMA }) as any;
     return { frontmatter, content: markdownContent.trim() };
   } catch (error) {
     throw new Error(`Failed to parse YAML frontmatter: ${error instanceof Error ? error.message : String(error)}`);
@@ -148,7 +148,8 @@ export async function loadSkillsFromDirectory(directoryPath: string): Promise<Lo
     return [];
   }
 
-  console.log(`Found ${skillFiles.length} skill file(s) in ${directoryPath}`);
+  // MCP protocol requires all non-JSON-RPC output to go to stderr, not stdout
+  console.error(`Found ${skillFiles.length} skill file(s) in ${directoryPath}`);
 
   const skills: LoadedSkill[] = [];
   const errors: string[] = [];
@@ -158,7 +159,7 @@ export async function loadSkillsFromDirectory(directoryPath: string): Promise<Lo
     try {
       const skill = await loadSkillFile(filePath);
       skills.push(skill);
-      console.log(`Loaded skill: ${skill.metadata.name} from ${filePath}`);
+      console.error(`Loaded skill: ${skill.metadata.name} from ${filePath}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(errorMsg);

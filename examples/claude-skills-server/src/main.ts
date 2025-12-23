@@ -10,21 +10,22 @@ async function bootstrap() {
   // Get configuration from environment variables
   const skillsDir = process.env.SKILLS_DIR || join(process.cwd(), 'skills');
 
-  console.log('='.repeat(60));
-  console.log('Claude Skills MCP Server');
-  console.log('='.repeat(60));
-  console.log(`Skills directory: ${skillsDir}`);
-  console.log('='.repeat(60));
+  // MCP protocol requires all non-JSON-RPC output to go to stderr, not stdout
+  console.error('='.repeat(60));
+  console.error('Claude Skills MCP Server');
+  console.error('='.repeat(60));
+  console.error(`Skills directory: ${skillsDir}`);
+  console.error('='.repeat(60));
 
   // Load skills from directory
-  console.log('\nLoading Claude Skills...');
+  console.error('\nLoading Claude Skills...');
   const skills = await loadSkillsFromDirectory(skillsDir);
 
   if (skills.length === 0) {
     throw new Error('No skills loaded. At least one skill is required.');
   }
 
-  console.log(`Successfully loaded ${skills.length} skill(s)\n`);
+  console.error(`Successfully loaded ${skills.length} skill(s)\n`);
 
   // Convert skills to tools
   const tools = parseSkillsToTools(skills);
@@ -39,26 +40,26 @@ async function bootstrap() {
   };
 
   // Initialize EasyMCP
-  console.log('Initializing EasyMCP Framework...');
+  console.error('Initializing EasyMCP Framework...');
   await EasyMCP.initialize(config);
 
   // Start the MCP server
-  console.log('Starting MCP server...');
+  console.error('Starting MCP server...');
   await EasyMCP.run();
 
-  console.log('\n✅ MCP Server is running and ready to accept connections!');
-  console.log('Press Ctrl+C to stop the server.\n');
+  console.error('\n✅ MCP Server is running and ready to accept connections!');
+  console.error('Press Ctrl+C to stop the server.\n');
 }
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('\nReceived SIGTERM, shutting down gracefully...');
+  console.error('\nReceived SIGTERM, shutting down gracefully...');
   await EasyMCP.shutdown();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('\nReceived SIGINT, shutting down gracefully...');
+  console.error('\nReceived SIGINT, shutting down gracefully...');
   await EasyMCP.shutdown();
   process.exit(0);
 });

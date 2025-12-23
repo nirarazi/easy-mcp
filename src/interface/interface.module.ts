@@ -1,6 +1,6 @@
 import { Module, Global } from "@nestjs/common";
 import { StdioGatewayService } from "./stdio-gateway.service";
-import { INTERFACE_LAYER_TOKEN } from "../../src/config/constants";
+import { INTERFACE_LAYER_TOKEN } from "../config/constants";
 
 @Global()
 @Module({

@@ -39,7 +39,7 @@ export class StdioGatewayService implements IInterfaceLayer {
   /**
    * Implements the IInterfaceLayer.start() method.
    * Sets up stdio readline interface for JSON-RPC communication.
-   * Uses Content-Length framing as per MCP protocol specification.
+   * Supports both newline-delimited JSON (default) and Content-Length framing (optional).
    */
   public async start(): Promise<void> {
     if (this.isRunning) {
@@ -332,14 +332,27 @@ export class StdioGatewayService implements IInterfaceLayer {
   }
 
   /**
-   * Sends a JSON-RPC response to stdout using Content-Length framing.
+   * Sends a JSON-RPC response to stdout.
+   * 
+   * By default, uses newline-delimited JSON for maximum client compatibility.
+   * Set MCP_USE_CONTENT_LENGTH=1 to use Content-Length framing per MCP spec.
+   * 
+   * Note: Some MCP clients (Cursor, Claude Desktop) have issues parsing Content-Length
+   * headers, so newline-delimited JSON is the default for better compatibility.
    */
   private sendResponse(response: JsonRpcResponse): void {
     const json = JSON.stringify(response);
-    const contentLength = Buffer.byteLength(json, "utf8");
-    
-    // Write Content-Length header followed by empty line, then message body
-    process.stdout.write(`Content-Length: ${contentLength}\r\n\r\n${json}`);
+    const useContentLength = process.env.MCP_USE_CONTENT_LENGTH === "1";
+
+    if (useContentLength) {
+      // MCP spec framing: Content-Length header + CRLF CRLF + body
+      const contentLength = Buffer.byteLength(json, "utf8");
+      const message = `Content-Length: ${contentLength}\r\n\r\n${json}`;
+      process.stdout.write(message);
+    } else {
+      // Default: newline-delimited JSON (better client compatibility)
+      process.stdout.write(json + "\n");
+    }
   }
 
   /**

@@ -228,7 +228,20 @@ EasyMCP implements the standard Model Context Protocol specification:
 
 ### Transport
 
-The server communicates via JSON-RPC 2.0 over stdio (standard input/output), which is the standard transport for MCP servers. This allows the server to be used with MCP clients like Claude Desktop, Cline, and other MCP-compatible tools.
+The server communicates via JSON-RPC 2.0 over stdio (standard input/output), which is the standard transport for MCP servers. This allows the server to be used with MCP clients like Claude Desktop, Cursor, Cline, and other MCP-compatible tools.
+
+**Default Mode: Newline-Delimited JSON**
+
+By default, the server uses newline-delimited JSON (one JSON-RPC message per line) for maximum compatibility with MCP clients. This mode works seamlessly with Cursor, Claude Desktop, and other popular MCP clients.
+
+**Content-Length Framing Mode (Optional)**
+
+For strict MCP protocol compliance with Content-Length framing, set the environment variable:
+```bash
+MCP_USE_CONTENT_LENGTH=1
+```
+
+This enables the MCP-specified Content-Length header format, which some clients may not parse correctly.
 
 ## Error Handling
 

@@ -32,7 +32,11 @@ export class EasyMCP {
     ConfigValidator.validate(config);
 
     // 1. Create the NestJS application context
-    const moduleRef = await NestFactory.createApplicationContext(AppModule);
+    // Completely disable NestJS logger to avoid corrupting JSON-RPC stdout stream
+    // We use our own structured logger (logger.util) that writes to stderr
+    const moduleRef = await NestFactory.createApplicationContext(AppModule, {
+      logger: false, // Disable all NestJS logging - we use our own structured logger
+    });
     this.app = moduleRef;
 
     // 2. Inject the runtime configuration object into the application context
