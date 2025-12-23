@@ -1,31 +1,41 @@
-import * as fs from "fs";
-import * as path from "path";
+import { logger } from "../core/utils/logger.util";
+
+interface PackageJson {
+  name?: string;
+  version?: string;
+}
 
 /**
  * Reads package.json to get version and name information.
  * Works in both development (TypeScript) and production (compiled JS) scenarios.
+ * Uses require() for simpler JSON loading without exposing filesystem paths.
  */
 function readPackageJson(): { name: string; version: string } {
-  // Get the directory of the current file
-  // In development: src/config/version.ts -> __dirname = src/config
-  // In production: dist/config/version.js -> __dirname = dist/config
-  // Both resolve to ../../package.json (project root)
-  const currentDir = __dirname;
-  const packageJsonPath = path.resolve(currentDir, "../../package.json");
-  
   try {
-    const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
-    const packageJson = JSON.parse(packageJsonContent);
+    // require() is the idiomatic way to read JSON files in Node.js.
+    // It caches the result, handles parsing, and resolves paths correctly.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const packageJson = require("../../package.json") as PackageJson;
+    
+    // Add type checks to ensure values are strings before using them
+    const name = typeof packageJson.name === "string" 
+      ? packageJson.name 
+      : "easy-mcp-framework";
+    const version = typeof packageJson.version === "string" 
+      ? packageJson.version 
+      : "0.0.0";
     
     return {
-      name: packageJson.name || "easy-mcp-framework",
-      version: packageJson.version || "0.0.0",
+      name,
+      version,
     };
   } catch (error) {
     // Fallback if package.json cannot be read
-    console.warn(
-      `Warning: Could not read package.json from ${packageJsonPath}. Using fallback version.`,
-    );
+    // Use structured logging without exposing filesystem paths
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.warn("version", "Could not read package.json. Using fallback version.", {
+      error: errorMessage,
+    });
     return {
       name: "easy-mcp-framework",
       version: "0.0.0",
