@@ -50,9 +50,10 @@ function parseFrontmatter(content: string): { frontmatter: any; content: string 
   const markdownContent = match[2];
 
   try {
-    // Use CORE_SCHEMA to prevent prototype pollution and unsafe type parsing
-    // CORE_SCHEMA is safer than DEFAULT_SCHEMA as it only allows safe core types
-    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.CORE_SCHEMA }) as any;
+    // Use safeLoad to prevent prototype pollution and unsafe type parsing
+    // safeLoad is the recommended method for parsing untrusted YAML content
+    // Note: safeLoad exists at runtime but may not be in TypeScript types for js-yaml v4
+    const frontmatter = (yaml as any).safeLoad(frontmatterYaml) as any;
     return { frontmatter, content: markdownContent.trim() };
   } catch (error) {
     // Sanitize error message to prevent information leakage

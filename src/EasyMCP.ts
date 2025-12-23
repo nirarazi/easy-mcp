@@ -9,6 +9,7 @@ import { ConfigValidator } from "./config/config-validator";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
 import { logger } from "./core/utils/logger.util";
 import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
+import { NestjsStderrLogger } from "./core/utils/nestjs-stderr-logger";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
 
@@ -32,10 +33,10 @@ export class EasyMCP {
     ConfigValidator.validate(config);
 
     // 1. Create the NestJS application context
-    // Completely disable NestJS logger to avoid corrupting JSON-RPC stdout stream
-    // We use our own structured logger (logger.util) that writes to stderr
+    // Use custom stderr logger to redirect NestJS logs to stderr for MCP protocol compliance
+    // This allows NestJS framework logs while preventing stdout pollution
     const moduleRef = await NestFactory.createApplicationContext(AppModule, {
-      logger: false, // Disable all NestJS logging - we use our own structured logger
+      logger: new NestjsStderrLogger(), // Use custom logger to redirect NestJS logs to stderr
     });
     this.app = moduleRef;
 
