@@ -22,6 +22,7 @@ import {
 import { ToolNotFoundError, ToolExecutionError } from "../errors/easy-mcp-error";
 import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
+import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
 import { sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
@@ -43,8 +44,8 @@ export class McpServerService implements OnModuleInit {
   private getServerInfo(): { name: string; version: string } {
     const config = this.configHolder.getConfig();
     const defaultInfo: { name: string; version: string } = {
-      name: "easy-mcp-framework",
-      version: "0.1.0",
+      name: PACKAGE_NAME,
+      version: VERSION,
     };
     return (config.serverInfo as { name: string; version: string } | undefined) ?? defaultInfo;
   }

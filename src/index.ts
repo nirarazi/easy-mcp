@@ -50,3 +50,6 @@ export {
 // Constants (for advanced use cases)
 export { INTERFACE_LAYER_TOKEN } from './config/constants';
 
+// Version information
+export { VERSION, PACKAGE_NAME, getVersion, getPackageName } from './config/version';
+
