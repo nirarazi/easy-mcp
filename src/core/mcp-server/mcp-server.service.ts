@@ -203,16 +203,17 @@ export class McpServerService implements OnModuleInit {
     if (params.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
       logger.warn("McpServerService", "Unsupported protocol version", {
         component: "Layer 3",
-        requestedVersion: params.protocolVersion,
+        // Don't log client-supplied protocolVersion to avoid logging sensitive data
         supportedVersion: SUPPORTED_PROTOCOL_VERSION,
         requestId: request.id,
       });
       const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
       if (isDebugMode) {
         logger.debug("McpServerService", "Protocol version mismatch", {
-          requested: params.protocolVersion,
+          // Don't log client-supplied data (protocolVersion, clientInfo) to avoid logging sensitive information
           supported: SUPPORTED_PROTOCOL_VERSION,
-          clientInfo: params.clientInfo,
+          // Only log safe metadata: client name if available (already extracted and stored)
+          clientName: params.clientInfo?.name || 'unknown',
         });
       }
       return createJsonRpcError(

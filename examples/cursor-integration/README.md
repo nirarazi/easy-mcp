@@ -22,9 +22,9 @@ const config = {
       description: 'Reads the contents of a file',
       function: async (args) => {
         const { filePath } = args;
-        const fs = require('fs');
+        const fs = require('fs').promises;
         try {
-          const content = fs.readFileSync(filePath, 'utf8');
+          const content = await fs.readFile(filePath, 'utf8');
           return content;
         } catch (error) {
           throw new Error(`Failed to read file: ${error.message}`);
@@ -46,9 +46,9 @@ const config = {
       description: 'Writes content to a file',
       function: async (args) => {
         const { filePath, content } = args;
-        const fs = require('fs');
+        const fs = require('fs').promises;
         try {
-          fs.writeFileSync(filePath, content, 'utf8');
+          await fs.writeFile(filePath, content, 'utf8');
           return JSON.stringify({ success: true, filePath });
         } catch (error) {
           throw new Error(`Failed to write file: ${error.message}`);
@@ -74,9 +74,9 @@ const config = {
       description: 'Lists files in a directory',
       function: async (args) => {
         const { directory } = args;
-        const fs = require('fs');
+        const fs = require('fs').promises;
         try {
-          const files = fs.readdirSync(directory);
+          const files = await fs.readdir(directory);
           return JSON.stringify({ directory, files });
         } catch (error) {
           throw new Error(`Failed to list files: ${error.message}`);

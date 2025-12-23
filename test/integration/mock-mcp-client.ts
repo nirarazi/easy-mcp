@@ -59,7 +59,7 @@ export class MockMcpClient extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      if (!this.serverProcess.stdout || !this.serverProcess.stdin) {
+      if (!this.serverProcess.stdout || !this.serverProcess.stdin || !this.serverProcess.stderr) {
         reject(new Error('Failed to spawn server process'));
         return;
       }
@@ -76,11 +76,39 @@ export class MockMcpClient extends EventEmitter {
         this.handleLine(line);
       });
 
-      // Handle server errors
-      this.serverProcess.stderr?.on('data', (data: Buffer) => {
-        // Log stderr but don't treat as fatal
-        console.error(`[Server stderr] ${data.toString()}`);
-      });
+      let isResolved = false;
+      const doResolve = () => {
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+
+      // Wait for server ready signal on stderr
+      const onStderrData = (data: Buffer) => {
+        const message = data.toString();
+        // Log stderr for debugging
+        console.error(`[Server stderr] ${message}`);
+        
+        // Check for server ready signals
+        if (
+          message.includes('Starting MCP server') ||
+          message.includes('Starting EasyMCP core services') ||
+          message.includes('EasyMCP core services are now running') ||
+          message.includes('listening for JSON-RPC requests')
+        ) {
+          // Server is ready, remove this listener and resolve
+          this.serverProcess?.stderr?.removeListener('data', onStderrData);
+          // Set up permanent stderr handler for remaining messages
+          this.serverProcess.stderr?.on('data', (data: Buffer) => {
+            console.error(`[Server stderr] ${data.toString()}`);
+          });
+          doResolve();
+        }
+      };
+
+      this.serverProcess.stderr.on('data', onStderrData);
 
       // Handle process exit
       this.serverProcess.on('exit', (code) => {
@@ -88,10 +116,15 @@ export class MockMcpClient extends EventEmitter {
         this.cleanup();
       });
 
-      // Wait a bit for server to initialize
-      setTimeout(() => {
-        resolve();
-      }, 500);
+      // Set a timeout as fallback in case server doesn't emit ready signal
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          this.serverProcess?.stderr?.removeListener('data', onStderrData);
+          // Still resolve to allow tests to proceed, but log a warning
+          console.warn('[MockMcpClient] Server ready signal not detected, proceeding after timeout');
+          doResolve();
+        }
+      }, 5000); // 5 second timeout as fallback
     });
   }
 
