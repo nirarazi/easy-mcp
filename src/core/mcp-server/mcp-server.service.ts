@@ -341,10 +341,12 @@ export class McpServerService implements OnModuleInit {
         requestId: request.id,
         clientName: sanitizedClientName,
       });
+      // Sanitize protocol version before including in error message to prevent reflected input injection
+      const sanitizedVersion = sanitizeName(params.protocolVersion);
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        `Unsupported protocol version: ${params.protocolVersion}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}. Please update your client to use protocol version ${PRIMARY_PROTOCOL_VERSION}.`,
+        `Unsupported protocol version: ${sanitizedVersion}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}. Please update your client to use protocol version ${PRIMARY_PROTOCOL_VERSION}.`,
       );
     }
     
@@ -547,10 +549,12 @@ export class McpServerService implements OnModuleInit {
           requiredParams: Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [],
         });
       }
+      // Sanitize tool name before including in error message to prevent reflected input injection
+      const sanitizedToolName = sanitizeName(toolName);
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        `Tool '${toolName}' validation failed: ${validationError}. Check the tool schema and ensure all required parameters are provided.`,
+        `Tool '${sanitizedToolName}' validation failed: ${validationError}. Check the tool schema and ensure all required parameters are provided.`,
       );
     }
 
