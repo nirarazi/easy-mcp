@@ -323,37 +323,57 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
-    // Validate protocol version - currently only 2025-11-25 is supported
-    const SUPPORTED_PROTOCOL_VERSION = "2025-11-25";
-    if (params.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+    // Validate protocol version - support multiple versions for compatibility
+    // 2024-11-05: Legacy version
+    // 2025-06-18: Intermediate version (used by Cursor)
+    // 2025-11-25: Current/latest version
+    const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-06-18", "2025-11-25"];
+    const PRIMARY_PROTOCOL_VERSION = "2025-11-25";
+    
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)) {
+      // Sanitize untrusted client-supplied data before logging
+      const sanitizedClientVersion = sanitizeName(params.protocolVersion);
+      const sanitizedClientName = params.clientInfo?.name ? sanitizeName(params.clientInfo.name) : 'unknown';
       logger.warn("McpServerService", "Unsupported protocol version", {
         component: "Layer 3",
-        // Don't log client-supplied protocolVersion to avoid logging sensitive data
-        supportedVersion: SUPPORTED_PROTOCOL_VERSION,
+        clientVersion: sanitizedClientVersion,
+        supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
         requestId: request.id,
+        clientName: sanitizedClientName,
       });
-      const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
-      if (isDebugMode) {
-        logger.debug("McpServerService", "Protocol version mismatch", {
-          // Don't log client-supplied data (protocolVersion, clientInfo) to avoid logging sensitive information
-          supported: SUPPORTED_PROTOCOL_VERSION,
-          // Only log safe metadata: client name if available (already extracted and stored)
-          clientName: params.clientInfo?.name || 'unknown',
-        });
-      }
+      // Sanitize protocol version before including in error message to prevent reflected input injection
+      const sanitizedVersion = sanitizeName(params.protocolVersion);
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        `Unsupported protocol version: ${params.protocolVersion}. Supported version: ${SUPPORTED_PROTOCOL_VERSION}. Please update your client to use protocol version ${SUPPORTED_PROTOCOL_VERSION}.`,
+        `Unsupported protocol version: ${sanitizedVersion}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}. Please update your client to use protocol version ${PRIMARY_PROTOCOL_VERSION}.`,
       );
+    }
+    
+    // Log if using legacy or intermediate version
+    if (params.protocolVersion !== PRIMARY_PROTOCOL_VERSION) {
+      // Sanitize untrusted client-supplied data before logging
+      const sanitizedClientVersion = sanitizeName(params.protocolVersion);
+      const sanitizedClientName = params.clientInfo?.name ? sanitizeName(params.clientInfo.name) : 'unknown';
+      logger.info("McpServerService", "Client using non-primary protocol version", {
+        component: "Layer 3",
+        clientVersion: sanitizedClientVersion,
+        recommendedVersion: PRIMARY_PROTOCOL_VERSION,
+        requestId: request.id,
+        clientName: sanitizedClientName,
+      });
     }
 
     const config = this.configHolder.getConfig();
     const hasResources = config.resources && config.resources.length > 0;
     const hasPrompts = config.prompts && config.prompts.length > 0;
     
+    // Respond with the client's requested protocol version.
+    // At this point, we've already validated that the client's version is supported.
+    const responseProtocolVersion = params.protocolVersion;
+    
     const result: InitializeResult = {
-      protocolVersion: SUPPORTED_PROTOCOL_VERSION,
+      protocolVersion: responseProtocolVersion,
       capabilities: {
         tools: {},
         ...(hasResources && { resources: {} }),
@@ -529,10 +549,12 @@ export class McpServerService implements OnModuleInit {
           requiredParams: Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [],
         });
       }
+      // Sanitize tool name before including in error message to prevent reflected input injection
+      const sanitizedToolName = sanitizeName(toolName);
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        `Tool '${toolName}' validation failed: ${validationError}. Check the tool schema and ensure all required parameters are provided.`,
+        `Tool '${sanitizedToolName}' validation failed: ${validationError}. Check the tool schema and ensure all required parameters are provided.`,
       );
     }
 

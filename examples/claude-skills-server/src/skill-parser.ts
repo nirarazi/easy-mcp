@@ -1,16 +1,16 @@
 import { LoadedSkill, SkillParameter } from './skill-loader';
-import { ToolRegistrationInput } from 'easy-mcp-nest';
+import { ToolRegistrationInput, ToolNamingValidator } from 'easy-mcp-nest';
 
 /**
  * Type mapping from Claude Skill parameter types to EasyMCP framework types
  */
-const TYPE_MAP: Record<string, 'STRING' | 'NUMBER' | 'INTEGER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT'> = {
-  string: 'STRING',
-  number: 'NUMBER',
-  integer: 'INTEGER',
-  boolean: 'BOOLEAN',
-  array: 'ARRAY',
-  object: 'OBJECT',
+const TYPE_MAP: Record<string, 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'> = {
+  string: 'string',
+  number: 'number',
+  integer: 'integer',
+  boolean: 'boolean',
+  array: 'array',
+  object: 'object',
 };
 
 /**
@@ -60,7 +60,7 @@ function createSkillExecutor(skill: LoadedSkill): (args: Record<string, any>) =>
 function convertParameter(
   paramName: string,
   paramDef: SkillParameter
-): { type: string; description: string; enum?: string[] } {
+): { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'; description: string; enum?: string[] } {
   const frameworkType = TYPE_MAP[paramDef.type];
   
   if (!frameworkType) {
@@ -70,7 +70,7 @@ function convertParameter(
     );
   }
 
-  const converted: { type: string; description: string; enum?: string[] } = {
+  const converted: { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'; description: string; enum?: string[] } = {
     type: frameworkType,
     description: paramDef.description,
   };
@@ -91,7 +91,7 @@ export function parseSkillToTool(skill: LoadedSkill): ToolRegistrationInput {
   const { metadata } = skill;
 
   // Convert parameters from skill format to EasyMCP format
-  const properties: Record<string, { type: string; description: string; enum?: string[] }> = {};
+  const properties: Record<string, { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'; description: string; enum?: string[] }> = {};
 
   if (metadata.parameters) {
     for (const [paramName, paramDef] of Object.entries(metadata.parameters)) {
@@ -111,13 +111,24 @@ export function parseSkillToTool(skill: LoadedSkill): ToolRegistrationInput {
     }
   }
 
+  // Validate tool name - throw error if invalid instead of auto-transforming
+  const toolName = metadata.name;
+  const namingError = ToolNamingValidator.validate(toolName);
+  if (namingError) {
+    const suggestedName = ToolNamingValidator.suggest(toolName);
+    throw new Error(
+      `Skill '${toolName}' has an invalid name. ` +
+      `Please fix it. Suggestion: '${suggestedName}'.`
+    );
+  }
+
   // Create the tool registration input
   const tool: ToolRegistrationInput = {
-    name: metadata.name,
+    name: toolName,
     description: metadata.description,
     function: createSkillExecutor(skill),
     inputSchema: {
-      type: 'OBJECT',
+      type: 'object',
       properties,
       required,
     },
