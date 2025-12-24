@@ -42,8 +42,9 @@ import { ConfigHolderService } from "../../config/config-holder.service";
 import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
+import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -195,7 +196,7 @@ export class McpServerService implements OnModuleInit {
             response.error ? "failure" : "success",
             {
               method: request.method,
-              ...(readResourceParams?.uri && { uri: readResourceParams.uri }),
+              ...(readResourceParams?.uri && { uri: sanitizeUri(readResourceParams.uri) }),
             },
             request.id,
             this.getActorIdentifier(request),
@@ -545,7 +546,15 @@ export class McpServerService implements OnModuleInit {
     };
 
     // Store cancellation token for this request if it has an ID
+    // Enforce size limit to prevent memory DoS
     if (request.id !== null && request.id !== undefined) {
+      // If map is at capacity, remove oldest entry (simple FIFO eviction)
+      if (this.cancellationTokens.size >= MAX_CANCELLATION_TOKENS) {
+        const firstKey = this.cancellationTokens.keys().next().value;
+        if (firstKey !== undefined) {
+          this.cancellationTokens.delete(firstKey);
+        }
+      }
       this.cancellationTokens.set(request.id, cancellationToken);
     }
 
@@ -730,7 +739,7 @@ export class McpServerService implements OnModuleInit {
       // Log URI internally for debugging, but don't expose it in user-facing error
       logger.debug("McpServerService", "Resource not found", {
         component: "Layer 3",
-        uri: params.uri,
+        uri: sanitizeUri(params.uri),
         requestId: request.id,
       });
       return createJsonRpcError(
@@ -751,32 +760,67 @@ export class McpServerService implements OnModuleInit {
         blob?: string;
       }>;
 
+      // Check content size to prevent unbounded response DoS
+      let contentSize: number;
+      let contentData: string;
+      
       if (typeof content === "string") {
-        contents = [{
-          uri: params.uri,
-          mimeType: resource.mimeType,
-          text: content,
-        }];
+        contentData = content;
+        contentSize = Buffer.byteLength(content, "utf8");
       } else {
         const contentType = content.type;
         if (contentType !== "text" && contentType !== "blob") {
           logger.error("McpServerService", "Invalid resource content type", {
             component: "Layer 3",
-            uri: params.uri,
+            uri: sanitizeUri(params.uri),
             contentType,
             requestId: request.id,
           });
           return createJsonRpcError(
             request.id,
             JsonRpcErrorCode.InternalError,
-            "Invalid resource content type",
+            "Internal error",
           );
         }
 
+        contentData = content.data;
+        // For blob data, estimate size (base64 encoded data is ~33% larger)
+        if (contentType === "blob") {
+          contentSize = Math.ceil(contentData.length * 0.75); // Approximate decoded size
+        } else {
+          contentSize = Buffer.byteLength(contentData, "utf8");
+        }
+      }
+
+      // Enforce size limit
+      if (contentSize > MAX_RESOURCE_CONTENT_SIZE_BYTES) {
+        logger.error("McpServerService", "Resource content exceeds maximum size", {
+          component: "Layer 3",
+          uri: sanitizeUri(params.uri),
+          contentSize,
+          maxSize: MAX_RESOURCE_CONTENT_SIZE_BYTES,
+          requestId: request.id,
+        });
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InternalError,
+          "Resource content too large",
+        );
+      }
+
+      // Build contents array
+      if (typeof content === "string") {
+        contents = [{
+          uri: params.uri,
+          mimeType: resource.mimeType,
+          text: contentData,
+        }];
+      } else {
+        const contentType = content.type;
         contents = [{
           uri: params.uri,
           mimeType: content.mimeType || resource.mimeType,
-          ...(contentType === "text" ? { text: content.data } : { blob: content.data }),
+          ...(contentType === "text" ? { text: contentData } : { blob: contentData }),
         }];
       }
 
@@ -788,15 +832,15 @@ export class McpServerService implements OnModuleInit {
     } catch (error) {
       logger.error("McpServerService", "Error reading resource", {
         component: "Layer 3",
-        uri: params.uri,
+        uri: sanitizeUri(params.uri),
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
-      // URI is already logged in error log above, don't expose in user-facing error
+      // Use InternalError for read failures (not ResourceNotFound) to distinguish from not-found cases
       return createJsonRpcError(
         request.id,
-        McpErrorCode.ResourceNotFound,
-        "Failed to read resource",
+        JsonRpcErrorCode.InternalError,
+        "Internal error",
       );
     }
   }
@@ -894,11 +938,11 @@ export class McpServerService implements OnModuleInit {
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
-      // Prompt name is already logged in error log above, don't expose in user-facing error
+      // Use InternalError for generation failures (not PromptNotFound) to distinguish from not-found cases
       return createJsonRpcError(
         request.id,
-        McpErrorCode.PromptNotFound,
-        "Failed to get prompt",
+        JsonRpcErrorCode.InternalError,
+        "Internal error",
       );
     }
   }

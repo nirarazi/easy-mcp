@@ -16,3 +16,15 @@ export const MAX_MESSAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
  * Prevents integer overflow and memory exhaustion
  */
 export const MAX_CONTENT_LENGTH = MAX_MESSAGE_SIZE_BYTES;
+
+/**
+ * Maximum allowed resource content size in bytes (10MB)
+ * Prevents memory exhaustion from unbounded resource responses
+ */
+export const MAX_RESOURCE_CONTENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Maximum number of concurrent cancellation tokens
+ * Prevents memory DoS via unbounded token map growth
+ */
+export const MAX_CANCELLATION_TOKENS = 1000;

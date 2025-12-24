@@ -174,3 +174,39 @@ export function sanitizeFilePath(filePath: string): string {
   }
 }
 
+/**
+ * Sanitizes URIs to prevent sensitive information exposure in logs.
+ * Returns a hash or truncated version to avoid exposing tokens or sensitive paths.
+ * @param uri The URI to sanitize
+ * @returns A sanitized URI representation
+ */
+export function sanitizeUri(uri: string): string {
+  if (!uri || typeof uri !== 'string') {
+    return '[invalid uri]';
+  }
+
+  try {
+    // For very long URIs or those that might contain tokens, return a hash
+    if (uri.length > 100 || /[?&](token|key|secret|auth|password|api[_-]?key)=/i.test(uri)) {
+      // Simple hash function for URI (not cryptographically secure, just for logging)
+      let hash = 0;
+      for (let i = 0; i < uri.length; i++) {
+        const char = uri.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return `[uri:${Math.abs(hash).toString(36)}]`;
+    }
+    
+    // For shorter URIs without sensitive patterns, return truncated if needed
+    if (uri.length > 50) {
+      return `${uri.substring(0, 50)}...`;
+    }
+    
+    return uri;
+  } catch {
+    // If URI processing fails, return a generic placeholder
+    return '[uri]';
+  }
+}
+
