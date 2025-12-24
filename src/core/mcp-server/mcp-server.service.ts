@@ -504,8 +504,8 @@ export class McpServerService implements OnModuleInit {
           toolName,
           validationError,
           providedArgs: Object.keys(args),
-          expectedParams: Object.keys(tool.parameters),
-          requiredParams: tool.required,
+          expectedParams: Object.keys(tool.inputSchema.properties || {}),
+          requiredParams: tool.inputSchema.required || [],
         });
       }
       return createJsonRpcError(

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ToolDefinition, ToolParameter } from "../tool.interface";
-import { ToolRegistrationInput } from "../../config/mcp-config.interface";
+import { ToolRegistrationInput, JsonSchema2020_12 } from "../../config/mcp-config.interface";
 import { ToolNotFoundError, ToolExecutionError } from "../../core/errors/easy-mcp-error";
 import { logger } from "../../core/utils/logger.util";
 
@@ -132,17 +132,88 @@ export class ToolRegistryService {
   }
 
   /**
+   * Converts a ToolParameter to JsonSchema2020_12, ensuring type is always defined.
+   * If type is undefined, it defaults to "object" for nested schemas.
+   */
+  private convertToolParameterToJsonSchema(param: ToolParameter): JsonSchema2020_12 {
+    // Ensure type is always defined - default to "object" if missing
+    const type: JsonSchema2020_12["type"] = param.type || "object";
+    
+    const schema: JsonSchema2020_12 = {
+      type,
+      ...(param.description && { description: param.description }),
+      ...(param.enum && { enum: param.enum }),
+      ...(param.default !== undefined && { default: param.default }),
+      ...(param.const !== undefined && { const: param.const }),
+      ...(param.required && { required: param.required }),
+      ...(param.$ref && { $ref: param.$ref }),
+      ...(param.oneOf && { oneOf: param.oneOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
+      ...(param.anyOf && { anyOf: param.anyOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
+      ...(param.allOf && { allOf: param.allOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
+    };
+
+    // Handle nested properties
+    if (param.properties) {
+      schema.properties = {};
+      for (const [key, value] of Object.entries(param.properties)) {
+        schema.properties[key] = this.convertToolParameterToJsonSchema(value);
+      }
+    }
+
+    // Handle items (for arrays)
+    if (param.items) {
+      if (Array.isArray(param.items)) {
+        schema.items = param.items.map(item => this.convertToolParameterToJsonSchema(item));
+      } else {
+        schema.items = this.convertToolParameterToJsonSchema(param.items);
+      }
+    }
+
+    // Copy any additional properties
+    for (const [key, value] of Object.entries(param)) {
+      if (!["type", "description", "enum", "default", "const", "required", "$ref", "oneOf", "anyOf", "allOf", "properties", "items"].includes(key)) {
+        (schema as any)[key] = value;
+      }
+    }
+
+    return schema;
+  }
+
+  /**
    * Converts registered tools to ToolRegistrationInput format.
    * Uses JSON Schema 2020-12 format directly.
    * @returns Array of tools in ToolRegistrationInput format
    */
   public getToolsAsRegistrationInput(): ToolRegistrationInput[] {
-    return Array.from(this.registry.values()).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      function: tool.execute,
-      inputSchema: tool.inputSchema,
-      icon: tool.icon,
-    }));
+    return Array.from(this.registry.values()).map((tool) => {
+      // Convert the inputSchema, ensuring all nested ToolParameters are converted to JsonSchema2020_12
+      const convertedSchema: JsonSchema2020_12 = {
+        type: "object",
+        ...(tool.inputSchema.required && { required: tool.inputSchema.required }),
+      };
+
+      // Convert properties if they exist
+      if (tool.inputSchema.properties) {
+        convertedSchema.properties = {};
+        for (const [key, value] of Object.entries(tool.inputSchema.properties)) {
+          convertedSchema.properties[key] = this.convertToolParameterToJsonSchema(value);
+        }
+      }
+
+      // Copy any additional properties from inputSchema
+      for (const [key, value] of Object.entries(tool.inputSchema)) {
+        if (!["type", "properties", "required"].includes(key)) {
+          (convertedSchema as any)[key] = value;
+        }
+      }
+
+      return {
+        name: tool.name,
+        description: tool.description,
+        function: tool.execute,
+        inputSchema: convertedSchema,
+        icon: tool.icon,
+      };
+    });
   }
 }
