@@ -30,10 +30,10 @@ const config = {
         return JSON.stringify({ result: 'success', input: args });
       },
       inputSchema: {
-        type: 'OBJECT',
+        type: 'object',
         properties: {
           message: {
-            type: 'STRING',
+            type: 'string',
             description: 'A test message',
           },
         },
@@ -48,14 +48,14 @@ const config = {
         return String(Number(a) + Number(b));
       },
       inputSchema: {
-        type: 'OBJECT',
+        type: 'object',
         properties: {
           a: {
-            type: 'NUMBER',
+            type: 'number',
             description: 'First number',
           },
           b: {
-            type: 'NUMBER',
+            type: 'number',
             description: 'Second number',
           },
         },
@@ -111,7 +111,7 @@ main();
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Step 1: Initialize
-      const initResponse = await client.initialize('2024-11-05', {
+      const initResponse = await client.initialize('2025-11-25', {
         name: 'test-client',
         version: '1.0.0',
       });
@@ -120,7 +120,7 @@ main();
       expect(initResponse.id).not.toBeNull();
       expect(initResponse.error).toBeUndefined();
       expect(initResponse.result).toBeDefined();
-      expect(initResponse.result.protocolVersion).toBe('2024-11-05');
+      expect(initResponse.result.protocolVersion).toBe('2025-11-25');
       expect(initResponse.result.capabilities).toBeDefined();
       expect(initResponse.result.serverInfo).toBeDefined();
       expect(initResponse.result.serverInfo.name).toBe('test-mcp-server');

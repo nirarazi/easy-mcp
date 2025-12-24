@@ -1,18 +1,22 @@
 import { ToolParameter } from "../../tooling/tool.interface";
 
 /**
- * Validates tool arguments against the tool's parameter schema.
+ * Validates tool arguments against the tool's JSON Schema 2020-12 schema.
  * @param args The arguments to validate
- * @param parameters The parameter schema definition
- * @param required List of required parameter names
+ * @param inputSchema The JSON Schema 2020-12 schema definition
  * @returns Validation error message if invalid, null if valid
  */
 export function validateToolArguments(
   args: Record<string, any>,
-  parameters: Record<string, ToolParameter>,
-  required: string[],
+  inputSchema: {
+    type: "object";
+    properties?: Record<string, ToolParameter>;
+    required?: string[];
+    additionalProperties?: boolean | Record<string, any>;
+  },
 ): string | null {
   // Check required parameters
+  const required = inputSchema.required || [];
   for (const paramName of required) {
     if (!(paramName in args) || args[paramName] === undefined || args[paramName] === null) {
       return `Missing required parameter: ${paramName}`;
@@ -20,17 +24,28 @@ export function validateToolArguments(
   }
 
   // Validate each provided argument
+  const properties = inputSchema.properties || {};
+  const additional = inputSchema.additionalProperties;
+  const allowUnknown =
+    additional === undefined || additional === true || typeof additional === "object";
+
   for (const [paramName, paramValue] of Object.entries(args)) {
-    const paramDef = parameters[paramName];
-    
+    const paramDef = properties[paramName];
+
+    // Only reject unknown parameters when the schema explicitly disallows them
     if (!paramDef) {
-      return `Unknown parameter: ${paramName}`;
+      if (!allowUnknown) {
+        return `Unknown parameter: ${paramName}`;
+      }
+      continue;
     }
 
-    // Validate type
-    const validationError = validateParameterType(paramName, paramValue, paramDef);
-    if (validationError) {
-      return validationError;
+    // Validate type only if schema declares a concrete type
+    if (paramDef.type !== undefined) {
+      const validationError = validateParameterType(paramName, paramValue, paramDef);
+      if (validationError) {
+        return validationError;
+      }
     }
 
     // Validate enum if specified
