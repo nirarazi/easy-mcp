@@ -19,16 +19,16 @@ describe('EasyMCP', () => {
   const validConfig: McpConfig = {
     tools: [
       {
-        name: 'testTool',
+        name: 'test_tool',
         description: 'A test tool',
         function: async (args: Record<string, any>) => {
           return `Result: ${JSON.stringify(args)}`;
         },
         inputSchema: {
-          type: 'OBJECT',
+          type: 'object',
           properties: {
             param: {
-              type: 'STRING',
+              type: 'string',
               description: 'A parameter',
             },
           },

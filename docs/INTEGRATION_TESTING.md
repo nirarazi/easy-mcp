@@ -203,7 +203,7 @@ Most MCP clients expect:
 To verify that your EasyMCP server is protocol-compliant:
 
 1. **Run Integration Tests**: The automated integration tests verify basic compliance
-2. **Check Protocol Version**: Ensure your server returns protocol version "2024-11-05"
+2. **Check Protocol Version**: Ensure your server returns protocol version "2025-11-25"
 3. **Verify Error Codes**: Test error scenarios and verify correct error codes are returned
 4. **Test Tool Schemas**: Ensure tool schemas match JSON Schema format expected by clients
 
@@ -240,7 +240,7 @@ MCP servers should log to stderr (not stdout). Check stderr output for:
 ### Common Issues
 
 **Protocol Version Mismatch:**
-- Ensure client sends protocol version "2024-11-05"
+- Ensure client sends protocol version "2025-11-25"
 - Check server logs for version validation errors
 
 **Tool Execution Failures:**

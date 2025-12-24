@@ -6,14 +6,14 @@ describe('ConfigValidator', () => {
   const validConfig: McpConfig = {
     tools: [
       {
-        name: 'testTool',
+        name: 'test_tool',
         description: 'A test tool',
         function: async () => 'result',
         inputSchema: {
-          type: 'OBJECT',
+          type: 'object',
           properties: {
             param: {
-              type: 'STRING',
+              type: 'string',
               description: 'A parameter',
             },
           },
@@ -100,7 +100,7 @@ describe('ConfigValidator', () => {
             description: 'A test tool',
             function: async () => 'result',
             inputSchema: {
-              type: 'OBJECT',
+              type: 'object',
               properties: {},
             },
           },
@@ -114,11 +114,11 @@ describe('ConfigValidator', () => {
         ...validConfig,
         tools: [
           {
-            name: 'testTool',
+            name: 'test_tool',
             description: 'A test tool',
             function: 'not a function' as any,
             inputSchema: {
-              type: 'OBJECT',
+              type: 'object',
               properties: {},
             },
           },
@@ -132,11 +132,11 @@ describe('ConfigValidator', () => {
         ...validConfig,
         tools: [
           {
-            name: 'testTool',
+            name: 'test_tool',
             description: 'A test tool',
             function: async () => 'result',
             inputSchema: {
-              type: 'OBJECT',
+              type: 'object',
               properties: {
                 param: {
                   type: 'INVALID_TYPE' as any,

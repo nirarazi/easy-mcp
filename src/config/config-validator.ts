@@ -1,5 +1,6 @@
 import { McpConfig, ToolRegistrationInput } from './mcp-config.interface';
 import { ConfigurationError } from '../core/errors/easy-mcp-error';
+import { ToolNamingValidator } from '../core/utils/tool-naming-validator';
 
 /**
  * Validates the EasyMCP configuration object.
@@ -52,6 +53,15 @@ export class ConfigValidator {
       throw new ConfigurationError(`Tool at index ${index}: name must be a non-empty string`);
     }
 
+    // Validate tool name according to MCP 2025-11-25 naming guidelines
+    const namingError = ToolNamingValidator.validate(tool.name);
+    if (namingError) {
+      const suggestion = ToolNamingValidator.suggest(tool.name);
+      throw new ConfigurationError(
+        `Tool '${tool.name}': ${namingError}. Suggested name: '${suggestion}'`
+      );
+    }
+
     if (!tool.description || typeof tool.description !== 'string' || tool.description.trim().length === 0) {
       throw new ConfigurationError(`Tool '${tool.name}': description must be a non-empty string`);
     }
@@ -64,32 +74,35 @@ export class ConfigValidator {
       throw new ConfigurationError(`Tool '${tool.name}': inputSchema is required`);
     }
 
-    if (tool.inputSchema.type !== 'OBJECT') {
-      throw new ConfigurationError(`Tool '${tool.name}': inputSchema.type must be 'OBJECT'`);
+    // Validate JSON Schema 2020-12 format
+    if (tool.inputSchema.type !== 'object') {
+      throw new ConfigurationError(`Tool '${tool.name}': inputSchema.type must be 'object' (JSON Schema 2020-12 format)`);
     }
 
-    if (!tool.inputSchema.properties || typeof tool.inputSchema.properties !== 'object' || Array.isArray(tool.inputSchema.properties)) {
-      throw new ConfigurationError(`Tool '${tool.name}': inputSchema.properties must be an object`);
-    }
-
-    // Validate each property in the schema
-    for (const [propName, propDef] of Object.entries(tool.inputSchema.properties)) {
-      if (!propDef || typeof propDef !== 'object' || Array.isArray(propDef)) {
-        throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' must be an object`);
+    // Properties are optional in JSON Schema, but validate if present
+    if (tool.inputSchema.properties !== undefined) {
+      if (typeof tool.inputSchema.properties !== 'object' || Array.isArray(tool.inputSchema.properties)) {
+        throw new ConfigurationError(`Tool '${tool.name}': inputSchema.properties must be an object`);
       }
 
-      if (!propDef.type || typeof propDef.type !== 'string') {
-        throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' must have a type`);
-      }
+      // Validate each property in the schema
+      for (const [propName, propDef] of Object.entries(tool.inputSchema.properties)) {
+        if (!propDef || typeof propDef !== 'object' || Array.isArray(propDef)) {
+          throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' must be an object`);
+        }
 
-      // Validate type is one of the supported types
-      const validTypes = ['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT'];
-      if (!validTypes.includes(propDef.type)) {
-        throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' has invalid type '${propDef.type}'. Must be one of: ${validTypes.join(', ')}`);
-      }
+        // Type is optional in JSON Schema (can use oneOf, anyOf, etc.), but if present, validate
+        if (propDef.type !== undefined) {
+          const validTypes = ['string', 'number', 'integer', 'boolean', 'array', 'object'];
+          if (typeof propDef.type !== 'string' || !validTypes.includes(propDef.type)) {
+            throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' has invalid type '${propDef.type}'. Must be one of: ${validTypes.join(', ')} (JSON Schema 2020-12 format)`);
+          }
+        }
 
-      if (!propDef.description || typeof propDef.description !== 'string') {
-        throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' must have a description`);
+        // Description is recommended but not required in JSON Schema
+        if (propDef.description !== undefined && typeof propDef.description !== 'string') {
+          throw new ConfigurationError(`Tool '${tool.name}': property '${propName}' description must be a string if provided`);
+        }
       }
     }
 
@@ -99,12 +112,19 @@ export class ConfigValidator {
         throw new ConfigurationError(`Tool '${tool.name}': inputSchema.required must be an array`);
       }
 
-      // Ensure all required properties exist in properties
-      for (const requiredProp of tool.inputSchema.required) {
-        if (!(requiredProp in tool.inputSchema.properties)) {
-          throw new ConfigurationError(`Tool '${tool.name}': required property '${requiredProp}' does not exist in properties`);
+      // Ensure all required properties exist in properties (if properties is defined)
+      if (tool.inputSchema.properties) {
+        for (const requiredProp of tool.inputSchema.required) {
+          if (!(requiredProp in tool.inputSchema.properties)) {
+            throw new ConfigurationError(`Tool '${tool.name}': required property '${requiredProp}' does not exist in properties`);
+          }
         }
       }
+    }
+
+    // Validate icon if provided
+    if (tool.icon !== undefined && typeof tool.icon !== 'string') {
+      throw new ConfigurationError(`Tool '${tool.name}': icon must be a string (URI) if provided`);
     }
   }
 }

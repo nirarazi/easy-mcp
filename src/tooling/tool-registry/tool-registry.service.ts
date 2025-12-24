@@ -7,6 +7,7 @@ import { logger } from "../../core/utils/logger.util";
 /**
  * Type representing a tool schema in the format expected by LLM providers.
  * This matches the format used by Gemini and other LLM APIs.
+ * Uses JSON Schema 2020-12 format.
  */
 export interface LlmToolSchema {
   type: "function";
@@ -15,8 +16,9 @@ export interface LlmToolSchema {
     description: string;
     parameters: {
       type: "object";
-      properties: Record<string, ToolParameter>;
-      required: string[];
+      properties?: Record<string, ToolParameter>;
+      required?: string[];
+      [key: string]: any;
     };
   };
 }
@@ -51,18 +53,23 @@ export class ToolRegistryService {
    * Executes a registered tool with the given arguments.
    * @param name The name of the tool to execute
    * @param args The arguments to pass to the tool function
+   * @param cancellationToken Optional cancellation token for long-running operations
    * @returns The result of the tool execution
    * @throws ToolNotFoundError if the tool is not registered
    * @throws ToolExecutionError if the tool execution fails
    */
-  public async executeTool(name: string, args: Record<string, any>): Promise<any> {
+  public async executeTool(
+    name: string,
+    args: Record<string, any>,
+    cancellationToken?: import("../tool.interface").CancellationToken
+  ): Promise<any> {
     const tool = this.getTool(name);
     if (!tool) {
       throw new ToolNotFoundError(name);
     }
 
     try {
-      const result = await tool.execute(args);
+      const result = await tool.execute(args, cancellationToken);
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -76,46 +83,31 @@ export class ToolRegistryService {
 
   /**
    * Registers a tool from the ToolRegistrationInput format (used in config).
-   * Converts the config format to the internal ToolDefinition format.
+   * Uses JSON Schema 2020-12 format directly.
    * @param toolInput The tool configuration from McpConfig
    */
   public registerToolFromConfig(toolInput: ToolRegistrationInput): void {
-    // Convert ToolRegistrationInput.inputSchema.properties to ToolParameter format
-    const parameters: Record<string, ToolParameter> = {};
-    
-    for (const [key, prop] of Object.entries(toolInput.inputSchema.properties)) {
-      // Convert uppercase type (STRING) to lowercase (string)
-      const typeMap: Record<string, ToolParameter['type']> = {
-        'STRING': 'string',
-        'NUMBER': 'number',
-        'INTEGER': 'integer',
-        'BOOLEAN': 'boolean',
-        'ARRAY': 'array',
-        'OBJECT': 'object',
-      };
-
-      const lowerType = typeMap[prop.type as string];
-      if (!lowerType) {
-        throw new Error(`Tool '${toolInput.name}': Unsupported property type '${prop.type}' for property '${key}'. Must be one of: STRING, NUMBER, INTEGER, BOOLEAN, ARRAY, OBJECT`);
-      }
-
-      parameters[key] = {
-        type: lowerType,
-        description: prop.description || '',
-        ...(prop.enum && { enum: prop.enum }),
-      };
+    // Validate that inputSchema is an object type schema
+    if (toolInput.inputSchema.type !== "object") {
+      throw new Error(`Tool '${toolInput.name}': inputSchema.type must be "object" for tool definitions`);
     }
 
-    // Convert required array
-    const required = toolInput.inputSchema.required || [];
-
-    // Create ToolDefinition
+    // Create ToolDefinition using JSON Schema 2020-12 directly
     const toolDefinition: ToolDefinition = {
       name: toolInput.name,
       description: toolInput.description,
       execute: toolInput.function,
-      parameters,
-      required,
+      inputSchema: {
+        type: "object",
+        properties: toolInput.inputSchema.properties || {},
+        required: toolInput.inputSchema.required || [],
+        ...Object.fromEntries(
+          Object.entries(toolInput.inputSchema).filter(
+            ([key]) => !["type", "properties", "required"].includes(key)
+          )
+        ),
+      },
+      icon: toolInput.icon,
     };
 
     // Register using the existing method
@@ -125,6 +117,7 @@ export class ToolRegistryService {
   /**
    * Retrieves the JSON Schema representations of ALL registered tools.
    * This output is passed directly to the LLM vendor API during the prompt assembly (Layer 3).
+   * Uses JSON Schema 2020-12 format.
    * @returns Array of tool schemas in LLM-compatible format
    */
   public getToolSchemasForLLM(): LlmToolSchema[] {
@@ -133,52 +126,23 @@ export class ToolRegistryService {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: {
-          type: "object" as const,
-          properties: tool.parameters,
-          required: tool.required,
-        },
+        parameters: tool.inputSchema,
       },
     }));
   }
 
   /**
-   * Converts registered tools to ToolRegistrationInput format for LLM provider.
-   * This is used to bridge the gap between internal ToolDefinition and the format
-   * expected by generateContent methods.
+   * Converts registered tools to ToolRegistrationInput format.
+   * Uses JSON Schema 2020-12 format directly.
    * @returns Array of tools in ToolRegistrationInput format
    */
   public getToolsAsRegistrationInput(): ToolRegistrationInput[] {
-    return Array.from(this.registry.values()).map((tool) => {
-      // Convert ToolParameter format back to ToolRegistrationInput format
-      const properties: Record<string, any> = {};
-      for (const [key, param] of Object.entries(tool.parameters)) {
-        // Convert lowercase type back to uppercase for ToolRegistrationInput
-        const typeMap: Record<ToolParameter['type'], string> = {
-          'string': 'STRING',
-          'number': 'NUMBER',
-          'integer': 'INTEGER',
-          'boolean': 'BOOLEAN',
-          'array': 'ARRAY',
-          'object': 'OBJECT',
-        };
-        properties[key] = {
-          type: typeMap[param.type] || 'STRING',
-          description: param.description,
-          ...(param.enum && { enum: param.enum }),
-        };
-      }
-
-      return {
-        name: tool.name,
-        description: tool.description,
-        function: tool.execute,
-        inputSchema: {
-          type: 'OBJECT',
-          properties,
-          required: tool.required,
-        },
-      };
-    });
+    return Array.from(this.registry.values()).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      function: tool.execute,
+      inputSchema: tool.inputSchema,
+      icon: tool.icon,
+    }));
   }
 }

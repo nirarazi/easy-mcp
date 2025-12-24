@@ -7,6 +7,8 @@ import { McpServerService } from "./core/mcp-server/mcp-server.service"; // Assu
 import { ConfigHolderService } from "./config/config-holder.service";
 import { ConfigValidator } from "./config/config-validator";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
+import { ResourceRegistryService } from "./resources/resource-registry.service";
+import { PromptRegistryService } from "./prompts/prompt-registry.service";
 import { logger } from "./core/utils/logger.util";
 import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
 import { NestjsStderrLogger } from "./core/utils/nestjs-stderr-logger";
@@ -59,6 +61,40 @@ export class EasyMCP {
       logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
         component: "EasyMCP",
         toolCount: config.tools.length,
+      });
+    }
+
+    // 4. Auto-register resources from config
+    if (config.resources && config.resources.length > 0) {
+      const resourceRegistry = moduleRef.get<ResourceRegistryService>(ResourceRegistryService);
+      for (const resource of config.resources) {
+        try {
+          resourceRegistry.registerResourceFromConfig(resource);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to register resource '${resource.uri}': ${errorMessage}`);
+        }
+      }
+      logger.info("EasyMCP", `Registered ${config.resources.length} resource(s) from configuration`, {
+        component: "EasyMCP",
+        resourceCount: config.resources.length,
+      });
+    }
+
+    // 5. Auto-register prompts from config
+    if (config.prompts && config.prompts.length > 0) {
+      const promptRegistry = moduleRef.get<PromptRegistryService>(PromptRegistryService);
+      for (const prompt of config.prompts) {
+        try {
+          promptRegistry.registerPromptFromConfig(prompt);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to register prompt '${prompt.name}': ${errorMessage}`);
+        }
+      }
+      logger.info("EasyMCP", `Registered ${config.prompts.length} prompt(s) from configuration`, {
+        component: "EasyMCP",
+        promptCount: config.prompts.length,
       });
     }
 

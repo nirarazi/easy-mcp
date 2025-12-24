@@ -1,18 +1,17 @@
 import { ToolParameter } from "../../tooling/tool.interface";
 
 /**
- * Validates tool arguments against the tool's parameter schema.
+ * Validates tool arguments against the tool's JSON Schema 2020-12 schema.
  * @param args The arguments to validate
- * @param parameters The parameter schema definition
- * @param required List of required parameter names
+ * @param inputSchema The JSON Schema 2020-12 schema definition
  * @returns Validation error message if invalid, null if valid
  */
 export function validateToolArguments(
   args: Record<string, any>,
-  parameters: Record<string, ToolParameter>,
-  required: string[],
+  inputSchema: { type: "object"; properties?: Record<string, ToolParameter>; required?: string[] },
 ): string | null {
   // Check required parameters
+  const required = inputSchema.required || [];
   for (const paramName of required) {
     if (!(paramName in args) || args[paramName] === undefined || args[paramName] === null) {
       return `Missing required parameter: ${paramName}`;
@@ -20,8 +19,9 @@ export function validateToolArguments(
   }
 
   // Validate each provided argument
+  const properties = inputSchema.properties || {};
   for (const [paramName, paramValue] of Object.entries(args)) {
-    const paramDef = parameters[paramName];
+    const paramDef = properties[paramName];
     
     if (!paramDef) {
       return `Unknown parameter: ${paramName}`;
