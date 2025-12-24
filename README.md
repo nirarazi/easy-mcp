@@ -189,12 +189,16 @@ process.on('SIGINT', async () => {
 - `McpConfig` - Main configuration interface
 - `ToolRegistrationInput` - Tool definition interface
 - `ServerInfo` - Optional server information
-- `JsonRpcRequest`, `JsonRpcResponse` - JSON-RPC 2.0 types
+- `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcError` - JSON-RPC 2.0 types
+- `JsonRpcErrorCode` - JSON-RPC 2.0 error code enum
 - `InitializeParams`, `InitializeResult` - MCP initialize types
 - `ListToolsResult`, `McpTool` - MCP tools types
 - `CallToolParams`, `CallToolResult` - MCP tool call types
 - `ToolDefinition`, `ToolParameter`, `ToolFunction` - Tool interfaces
 - `IInterfaceLayer` - Interface layer interface
+- `McpErrorCode` - MCP error code enum
+- `VERSION`, `PACKAGE_NAME`, `getVersion()`, `getPackageName()` - Version information utilities
+- `INTERFACE_LAYER_TOKEN` - Token for accessing the interface layer (advanced use cases)
 
 ## Architecture
 
@@ -392,6 +396,8 @@ Enable debug logging to troubleshoot issues:
 
 ```bash
 DEBUG=1 node your-server.js
+# or
+DEBUG=true node your-server.js
 ```
 
 Debug mode provides detailed information about:
@@ -399,6 +405,8 @@ Debug mode provides detailed information about:
 - Tool execution details
 - Protocol version validation
 - Argument validation
+
+**Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
 
 ## Examples
 

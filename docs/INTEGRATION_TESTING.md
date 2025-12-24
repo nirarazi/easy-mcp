@@ -211,11 +211,23 @@ To verify that your EasyMCP server is protocol-compliant:
 
 ### Enable Debug Logging
 
-Add debug logging to your server script:
+Enable debug logging by setting the `DEBUG` environment variable:
+
+```bash
+DEBUG=1 node your-server.js
+# or
+DEBUG=true node your-server.js
+```
+
+Or in your server script:
 
 ```javascript
-process.env.DEBUG = 'easy-mcp:*';
+process.env.DEBUG = '1';
+// or
+process.env.DEBUG = 'true';
 ```
+
+**Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
 
 ### Check Server Logs
 
