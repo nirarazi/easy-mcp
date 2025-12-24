@@ -8,7 +8,12 @@ import { ToolParameter } from "../../tooling/tool.interface";
  */
 export function validateToolArguments(
   args: Record<string, any>,
-  inputSchema: { type: "object"; properties?: Record<string, ToolParameter>; required?: string[] },
+  inputSchema: {
+    type: "object";
+    properties?: Record<string, ToolParameter>;
+    required?: string[];
+    additionalProperties?: boolean | Record<string, any>;
+  },
 ): string | null {
   // Check required parameters
   const required = inputSchema.required || [];
@@ -20,17 +25,27 @@ export function validateToolArguments(
 
   // Validate each provided argument
   const properties = inputSchema.properties || {};
+  const additional = inputSchema.additionalProperties;
+  const allowUnknown =
+    additional === undefined || additional === true || typeof additional === "object";
+
   for (const [paramName, paramValue] of Object.entries(args)) {
     const paramDef = properties[paramName];
-    
+
+    // Only reject unknown parameters when the schema explicitly disallows them
     if (!paramDef) {
-      return `Unknown parameter: ${paramName}`;
+      if (!allowUnknown) {
+        return `Unknown parameter: ${paramName}`;
+      }
+      continue;
     }
 
-    // Validate type
-    const validationError = validateParameterType(paramName, paramValue, paramDef);
-    if (validationError) {
-      return validationError;
+    // Validate type only if schema declares a concrete type
+    if (paramDef.type !== undefined) {
+      const validationError = validateParameterType(paramName, paramValue, paramDef);
+      if (validationError) {
+        return validationError;
+      }
     }
 
     // Validate enum if specified

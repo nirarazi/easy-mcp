@@ -136,47 +136,61 @@ export class ToolRegistryService {
    * If type is undefined, it defaults to "object" for nested schemas.
    */
   private convertToolParameterToJsonSchema(param: ToolParameter): JsonSchema2020_12 {
-    // Ensure type is always defined - default to "object" if missing
-    const type: JsonSchema2020_12["type"] = param.type || "object";
-    
-    const schema: JsonSchema2020_12 = {
-      type,
+    const schema: any = {
+      ...(param.type !== undefined && { type: param.type }),
       ...(param.description && { description: param.description }),
       ...(param.enum && { enum: param.enum }),
       ...(param.default !== undefined && { default: param.default }),
       ...(param.const !== undefined && { const: param.const }),
-      ...(param.required && { required: param.required }),
       ...(param.$ref && { $ref: param.$ref }),
-      ...(param.oneOf && { oneOf: param.oneOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
-      ...(param.anyOf && { anyOf: param.anyOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
-      ...(param.allOf && { allOf: param.allOf.map(p => this.convertToolParameterToJsonSchema(p)) }),
+      ...(param.oneOf && { oneOf: param.oneOf.map((p) => this.convertToolParameterToJsonSchema(p)) }),
+      ...(param.anyOf && { anyOf: param.anyOf.map((p) => this.convertToolParameterToJsonSchema(p)) }),
+      ...(param.allOf && { allOf: param.allOf.map((p) => this.convertToolParameterToJsonSchema(p)) }),
     };
 
     // Handle nested properties
     if (param.properties) {
+      schema.type = schema.type ?? "object";
       schema.properties = {};
       for (const [key, value] of Object.entries(param.properties)) {
         schema.properties[key] = this.convertToolParameterToJsonSchema(value);
+      }
+      if (Array.isArray(param.required)) {
+        schema.required = param.required;
       }
     }
 
     // Handle items (for arrays)
     if (param.items) {
-      if (Array.isArray(param.items)) {
-        schema.items = param.items.map(item => this.convertToolParameterToJsonSchema(item));
-      } else {
-        schema.items = this.convertToolParameterToJsonSchema(param.items);
-      }
+      schema.type = schema.type ?? "array";
+      schema.items = Array.isArray(param.items)
+        ? param.items.map((item) => this.convertToolParameterToJsonSchema(item))
+        : this.convertToolParameterToJsonSchema(param.items);
     }
 
     // Copy any additional properties
     for (const [key, value] of Object.entries(param)) {
-      if (!["type", "description", "enum", "default", "const", "required", "$ref", "oneOf", "anyOf", "allOf", "properties", "items"].includes(key)) {
-        (schema as any)[key] = value;
+      if (
+        ![
+          "type",
+          "description",
+          "enum",
+          "default",
+          "const",
+          "required",
+          "$ref",
+          "oneOf",
+          "anyOf",
+          "allOf",
+          "properties",
+          "items",
+        ].includes(key)
+      ) {
+        schema[key] = value;
       }
     }
 
-    return schema;
+    return schema as JsonSchema2020_12;
   }
 
   /**

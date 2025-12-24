@@ -49,6 +49,8 @@ import { CancellationToken } from "../../tooling/tool.interface";
 export class McpServerService implements OnModuleInit {
   // Store client identifier from initialize request for audit logging
   private clientIdentifier: string = "stdio-client";
+  // Map of request IDs to cancellation tokens for handling $/cancelRequest
+  private readonly cancellationTokens = new Map<string | number, CancellationToken>();
 
   constructor(
     private readonly toolRegistry: ToolRegistryService,
@@ -186,11 +188,15 @@ export class McpServerService implements OnModuleInit {
           return response;
         case "resources/read":
           response = await this.handleReadResource(request);
+          const readResourceParams = request.params as { uri?: string } | undefined;
           logger.audit(
             "McpServerService",
             "resources/read",
             response.error ? "failure" : "success",
-            { method: request.method },
+            {
+              method: request.method,
+              ...(readResourceParams?.uri && { uri: readResourceParams.uri }),
+            },
             request.id,
             this.getActorIdentifier(request),
           );
@@ -208,11 +214,15 @@ export class McpServerService implements OnModuleInit {
           return response;
         case "prompts/get":
           response = await this.handleGetPrompt(request);
+          const getPromptParams = request.params as { name?: string } | undefined;
           logger.audit(
             "McpServerService",
             "prompts/get",
             response.error ? "failure" : "success",
-            { method: request.method },
+            {
+              method: request.method,
+              ...(getPromptParams?.name && { promptName: getPromptParams.name }),
+            },
             request.id,
             this.getActorIdentifier(request),
           );
@@ -261,6 +271,11 @@ export class McpServerService implements OnModuleInit {
             this.getActorIdentifier(request),
           );
           return response;
+        case "$/cancelRequest":
+          // This is a notification (id is null), so we handle it but don't return a response
+          this.handleCancelRequest(request);
+          // Return a special marker to indicate this was a notification
+          return { jsonrpc: "2.0", id: null } as JsonRpcResponse;
         default:
           logger.warn("McpServerService", "Method not found", {
             component: "Layer 3",
@@ -504,8 +519,13 @@ export class McpServerService implements OnModuleInit {
           toolName,
           validationError,
           providedArgs: Object.keys(args),
-          expectedParams: Object.keys(tool.inputSchema.properties || {}),
-          requiredParams: tool.inputSchema.required || [],
+          expectedParams:
+            tool.inputSchema.properties &&
+            typeof tool.inputSchema.properties === "object" &&
+            !Array.isArray(tool.inputSchema.properties)
+              ? Object.keys(tool.inputSchema.properties)
+              : [],
+          requiredParams: Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [],
         });
       }
       return createJsonRpcError(
@@ -515,14 +535,19 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
-    // Create cancellation token for this request (basic implementation)
+    // Create cancellation token for this request
     const cancellationToken: CancellationToken = {
       isCancelled: false,
-      onCancel: () => {}, // Placeholder - would be implemented with proper cancellation handling
+      onCancel: () => {}, // Placeholder for event listener
       cancel: () => {
         cancellationToken.isCancelled = true;
       },
     };
+
+    // Store cancellation token for this request if it has an ID
+    if (request.id !== null && request.id !== undefined) {
+      this.cancellationTokens.set(request.id, cancellationToken);
+    }
 
     try {
       const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken);
@@ -634,6 +659,29 @@ export class McpServerService implements OnModuleInit {
         McpErrorCode.ToolExecutionError,
         "Tool execution failed",
       );
+    } finally {
+      // Clean up the cancellation token after the request is finished
+      if (request.id !== null && request.id !== undefined) {
+        this.cancellationTokens.delete(request.id);
+      }
+    }
+  }
+
+  /**
+   * Handles the $/cancelRequest notification.
+   * Cancels the request with the specified requestId if it exists.
+   */
+  private handleCancelRequest(request: JsonRpcRequest): void {
+    const params = request.params as { requestId?: string | number } | undefined;
+    if (params?.requestId !== undefined) {
+      const token = this.cancellationTokens.get(params.requestId);
+      if (token) {
+        token.cancel();
+        logger.debug("McpServerService", "Request cancelled", {
+          component: "Layer 3",
+          requestId: params.requestId,
+        });
+      }
     }
   }
 
@@ -679,10 +727,16 @@ export class McpServerService implements OnModuleInit {
 
     const resource = this.resourceRegistry.getResource(params.uri);
     if (!resource) {
+      // Log URI internally for debugging, but don't expose it in user-facing error
+      logger.debug("McpServerService", "Resource not found", {
+        component: "Layer 3",
+        uri: params.uri,
+        requestId: request.id,
+      });
       return createJsonRpcError(
         request.id,
         McpErrorCode.ResourceNotFound,
-        `Resource not found: ${params.uri}`,
+        "Resource not found",
       );
     }
 
@@ -704,10 +758,25 @@ export class McpServerService implements OnModuleInit {
           text: content,
         }];
       } else {
+        const contentType = content.type;
+        if (contentType !== "text" && contentType !== "blob") {
+          logger.error("McpServerService", "Invalid resource content type", {
+            component: "Layer 3",
+            uri: params.uri,
+            contentType,
+            requestId: request.id,
+          });
+          return createJsonRpcError(
+            request.id,
+            JsonRpcErrorCode.InternalError,
+            "Invalid resource content type",
+          );
+        }
+
         contents = [{
           uri: params.uri,
           mimeType: content.mimeType || resource.mimeType,
-          ...(content.type === "text" ? { text: content.data } : { blob: content.data }),
+          ...(contentType === "text" ? { text: content.data } : { blob: content.data }),
         }];
       }
 
@@ -723,10 +792,11 @@ export class McpServerService implements OnModuleInit {
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
+      // URI is already logged in error log above, don't expose in user-facing error
       return createJsonRpcError(
         request.id,
         McpErrorCode.ResourceNotFound,
-        `Failed to read resource: ${params.uri}`,
+        "Failed to read resource",
       );
     }
   }
@@ -772,15 +842,44 @@ export class McpServerService implements OnModuleInit {
 
     const prompt = this.promptRegistry.getPrompt(params.name);
     if (!prompt) {
+      // Log prompt name internally for debugging, but don't expose it in user-facing error
+      logger.debug("McpServerService", "Prompt not found", {
+        component: "Layer 3",
+        promptName: params.name,
+        requestId: request.id,
+      });
       return createJsonRpcError(
         request.id,
         McpErrorCode.PromptNotFound,
-        `Prompt not found: ${params.name}`,
+        "Prompt not found",
       );
     }
 
+    // Validate that arguments is an object if provided
+    if (params.arguments !== undefined && (typeof params.arguments !== "object" || params.arguments === null || Array.isArray(params.arguments))) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Arguments must be a plain object",
+      );
+    }
+
+    const args = params.arguments || {};
+
+    // Validate required prompt arguments
+    if (prompt.arguments) {
+      for (const argDef of prompt.arguments.filter(a => a.required)) {
+        if (args[argDef.name] === undefined) {
+          return createJsonRpcError(
+            request.id,
+            JsonRpcErrorCode.InvalidParams,
+            `Missing required prompt argument: ${argDef.name}`,
+          );
+        }
+      }
+    }
+
     try {
-      const args = params.arguments || {};
       const messages = await this.promptRegistry.getPromptContent(params.name, args);
 
       const result: GetPromptResult = {
@@ -795,10 +894,11 @@ export class McpServerService implements OnModuleInit {
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
+      // Prompt name is already logged in error log above, don't expose in user-facing error
       return createJsonRpcError(
         request.id,
         McpErrorCode.PromptNotFound,
-        `Failed to get prompt: ${params.name}`,
+        "Failed to get prompt",
       );
     }
   }
