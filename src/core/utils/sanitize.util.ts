@@ -3,6 +3,24 @@
  */
 
 /**
+ * Dangerous object keys that can be used for prototype pollution attacks.
+ */
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Checks if a key is safe to use as an object property name.
+ * Prevents prototype pollution by rejecting dangerous keys.
+ * @param key The key to check
+ * @returns true if the key is safe, false otherwise
+ */
+export function isSafeObjectKey(key: string): boolean {
+  if (typeof key !== 'string') {
+    return false;
+  }
+  return !DANGEROUS_KEYS.has(key);
+}
+
+/**
  * Sanitizes a value to prevent sensitive data exposure.
  * Replaces potentially sensitive values with a redacted placeholder.
  * @param value The value to sanitize
@@ -171,6 +189,75 @@ export function sanitizeFilePath(filePath: string): string {
   } catch {
     // If path parsing fails, return a generic placeholder
     return '[path]';
+  }
+}
+
+/**
+ * Sanitizes URIs to prevent sensitive information exposure and log injection in logs.
+ * Removes control characters, enforces length limits, and hashes sensitive patterns.
+ * @param uri The URI to sanitize
+ * @returns A sanitized URI representation safe for logging
+ */
+export function sanitizeUri(uri: string): string {
+  if (!uri || typeof uri !== 'string') {
+    return '[invalid uri]';
+  }
+
+  try {
+    // Remove control characters and newlines to prevent log injection
+    let sanitized = uri.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, '');
+    
+    // Enforce maximum length to prevent DoS via extremely long strings
+    const MAX_LOG_STRING_LENGTH = 200;
+    if (sanitized.length > MAX_LOG_STRING_LENGTH) {
+      sanitized = sanitized.substring(0, MAX_LOG_STRING_LENGTH);
+    }
+
+    // For URIs that might contain tokens or are long, return a hash
+    if (sanitized.length > 100 || /[?&](token|key|secret|auth|password|api[_-]?key)=/i.test(sanitized)) {
+      // Simple hash function for URI (not cryptographically secure, just for logging)
+      let hash = 0;
+      for (let i = 0; i < sanitized.length; i++) {
+        const char = sanitized.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return `[uri:${Math.abs(hash).toString(36)}]`;
+    }
+    
+    // For shorter URIs without sensitive patterns, return as-is (already sanitized)
+    return sanitized;
+  } catch {
+    // If URI processing fails, return a generic placeholder
+    return '[uri]';
+  }
+}
+
+/**
+ * Sanitizes names (like prompt names) to prevent log injection and DoS.
+ * Removes control characters and enforces length limits.
+ * @param name The name to sanitize
+ * @returns A sanitized name safe for logging
+ */
+export function sanitizeName(name: string): string {
+  if (!name || typeof name !== 'string') {
+    return '[invalid name]';
+  }
+
+  try {
+    // Remove control characters and newlines to prevent log injection
+    let sanitized = name.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, '');
+    
+    // Enforce maximum length to prevent DoS via extremely long strings
+    const MAX_LOG_STRING_LENGTH = 200;
+    if (sanitized.length > MAX_LOG_STRING_LENGTH) {
+      sanitized = sanitized.substring(0, MAX_LOG_STRING_LENGTH);
+    }
+    
+    return sanitized;
+  } catch {
+    // If name processing fails, return a generic placeholder
+    return '[name]';
   }
 }
 
