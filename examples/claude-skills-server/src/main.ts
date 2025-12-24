@@ -1,4 +1,4 @@
-import { EasyMCP, McpConfig } from 'easy-mcp-framework';
+import { EasyMCP, McpConfig } from 'easy-mcp-nest';
 import { loadSkillsFromDirectory } from './skill-loader';
 import { parseSkillsToTools } from './skill-parser';
 import { join, basename } from 'path';
