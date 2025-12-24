@@ -10,7 +10,7 @@ import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.servi
 import { ResourceRegistryService } from "./resources/resource-registry.service";
 import { PromptRegistryService } from "./prompts/prompt-registry.service";
 import { logger } from "./core/utils/logger.util";
-import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
+import { sanitizeErrorMessage, sanitizeUri, sanitizeName } from "./core/utils/sanitize.util";
 import { NestjsStderrLogger } from "./core/utils/nestjs-stderr-logger";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
@@ -55,7 +55,8 @@ export class EasyMCP {
           toolRegistry.registerToolFromConfig(tool);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
+          const sanitizedToolName = sanitizeName(tool.name);
+          throw new Error(`Failed to register tool '${sanitizedToolName}': ${errorMessage}`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
@@ -72,7 +73,8 @@ export class EasyMCP {
           resourceRegistry.registerResourceFromConfig(resource);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to register resource '${resource.uri}': ${errorMessage}`);
+          const sanitizedUri = sanitizeUri(resource.uri);
+          throw new Error(`Failed to register resource '${sanitizedUri}': ${errorMessage}`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.resources.length} resource(s) from configuration`, {
@@ -89,7 +91,8 @@ export class EasyMCP {
           promptRegistry.registerPromptFromConfig(prompt);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to register prompt '${prompt.name}': ${errorMessage}`);
+          const sanitizedPromptName = sanitizeName(prompt.name);
+          throw new Error(`Failed to register prompt '${sanitizedPromptName}': ${errorMessage}`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.prompts.length} prompt(s) from configuration`, {

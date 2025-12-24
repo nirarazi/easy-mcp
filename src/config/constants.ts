@@ -28,3 +28,9 @@ export const MAX_RESOURCE_CONTENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
  * Prevents memory DoS via unbounded token map growth
  */
 export const MAX_CANCELLATION_TOKENS = 1000;
+
+/**
+ * Maximum length for URIs and names in logs (to prevent log injection/DoS)
+ * Values longer than this will be truncated or hashed
+ */
+export const MAX_LOG_STRING_LENGTH = 200;

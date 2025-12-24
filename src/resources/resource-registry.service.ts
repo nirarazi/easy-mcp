@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ResourceDefinition, ResourceRegistrationInput } from "./resource.interface";
 import { logger } from "../core/utils/logger.util";
+import { sanitizeUri } from "../core/utils/sanitize.util";
 
 @Injectable()
 export class ResourceRegistryService {
@@ -21,9 +22,10 @@ export class ResourceRegistryService {
     }
     this.registry.set(definition.uri, definition);
     this.contentProviders.set(definition.uri, getContent);
-    logger.info("ResourceRegistryService", `Resource registered: ${definition.uri}`, {
+    const sanitizedUri = sanitizeUri(definition.uri);
+    logger.info("ResourceRegistryService", `Resource registered: ${sanitizedUri}`, {
       component: "ResourceRegistry",
-      resourceUri: definition.uri,
+      resourceUri: sanitizedUri,
     });
   }
 

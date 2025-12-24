@@ -42,7 +42,7 @@ import { ConfigHolderService } from "../../config/config-holder.service";
 import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 
@@ -222,7 +222,7 @@ export class McpServerService implements OnModuleInit {
             response.error ? "failure" : "success",
             {
               method: request.method,
-              ...(getPromptParams?.name && { promptName: getPromptParams.name }),
+              ...(getPromptParams?.name && { promptName: sanitizeName(getPromptParams.name) }),
             },
             request.id,
             this.getActorIdentifier(request),
@@ -457,7 +457,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "Invalid arguments type - must be a plain object",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -482,7 +482,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Tool not found",
-          toolName,
+          toolName: sanitizeName(toolName),
           method: request.method,
         },
         request.id,
@@ -507,7 +507,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Invalid arguments",
-          toolName,
+          toolName: sanitizeName(toolName),
           validationError,
           method: request.method,
         },
@@ -517,7 +517,7 @@ export class McpServerService implements OnModuleInit {
       const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
       if (isDebugMode) {
         logger.debug("McpServerService", "Tool argument validation failed", {
-          toolName,
+          toolName: sanitizeName(toolName),
           validationError,
           providedArgs: Object.keys(args),
           expectedParams:
@@ -589,7 +589,7 @@ export class McpServerService implements OnModuleInit {
         "tools/call",
         "success",
         {
-          toolName,
+          toolName: sanitizeName(toolName),
           resultSize: sanitizedResult.length,
           method: request.method,
         },
@@ -607,7 +607,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "ToolNotFoundError",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -627,7 +627,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "ToolExecutionError",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -644,7 +644,7 @@ export class McpServerService implements OnModuleInit {
       // Unknown error - log for debugging but don't expose details to client
       logger.error("McpServerService", "Unknown error during tool execution", {
         component: "Layer 3",
-        toolName,
+        toolName: sanitizeName(toolName),
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
@@ -655,7 +655,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Unknown error",
-          toolName,
+          toolName: sanitizeName(toolName),
           method: request.method,
         },
         request.id,
@@ -889,7 +889,7 @@ export class McpServerService implements OnModuleInit {
       // Log prompt name internally for debugging, but don't expose it in user-facing error
       logger.debug("McpServerService", "Prompt not found", {
         component: "Layer 3",
-        promptName: params.name,
+        promptName: sanitizeName(params.name),
         requestId: request.id,
       });
       return createJsonRpcError(
@@ -934,7 +934,7 @@ export class McpServerService implements OnModuleInit {
     } catch (error) {
       logger.error("McpServerService", "Error getting prompt", {
         component: "Layer 3",
-        promptName: params.name,
+        promptName: sanitizeName(params.name),
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PromptDefinition, PromptRegistrationInput } from "./prompt.interface";
 import { logger } from "../core/utils/logger.util";
+import { sanitizeName } from "../core/utils/sanitize.util";
 
 @Injectable()
 export class PromptRegistryService {
@@ -39,9 +40,10 @@ export class PromptRegistryService {
     }
     this.registry.set(definition.name, definition);
     this.promptProviders.set(definition.name, getPrompt);
-    logger.info("PromptRegistryService", `Prompt registered: ${definition.name}`, {
+    const sanitizedPromptName = sanitizeName(definition.name);
+    logger.info("PromptRegistryService", `Prompt registered: ${sanitizedPromptName}`, {
       component: "PromptRegistry",
-      promptName: definition.name,
+      promptName: sanitizedPromptName,
     });
   }
 
