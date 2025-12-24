@@ -82,6 +82,29 @@ export class ToolNamingValidator {
     // Remove leading/trailing underscores
     suggested = suggested.replace(/^_+|_+$/g, "");
 
+    // Handle reserved patterns by adding a prefix
+    const reservedPatterns = [
+      /^system/,
+      /^internal/,
+    ];
+
+    for (const pattern of reservedPatterns) {
+      if (pattern.test(suggested)) {
+        suggested = "skill_" + suggested;
+        break;
+      }
+    }
+
+    // Handle leading underscore
+    if (/^_/.test(suggested)) {
+      suggested = "tool" + suggested;
+    }
+
+    // Handle trailing hyphen
+    if (/-$/.test(suggested)) {
+      suggested = suggested.slice(0, -1) + "_tool";
+    }
+
     // Ensure it's not empty
     if (suggested.length === 0) {
       suggested = "tool_name";

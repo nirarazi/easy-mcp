@@ -323,37 +323,51 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
-    // Validate protocol version - currently only 2025-11-25 is supported
-    const SUPPORTED_PROTOCOL_VERSION = "2025-11-25";
-    if (params.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+    // Validate protocol version - support multiple versions for compatibility
+    // 2024-11-05: Legacy version
+    // 2025-06-18: Intermediate version (used by Cursor)
+    // 2025-11-25: Current/latest version
+    const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-06-18", "2025-11-25"];
+    const PRIMARY_PROTOCOL_VERSION = "2025-11-25";
+    
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)) {
       logger.warn("McpServerService", "Unsupported protocol version", {
         component: "Layer 3",
-        // Don't log client-supplied protocolVersion to avoid logging sensitive data
-        supportedVersion: SUPPORTED_PROTOCOL_VERSION,
+        clientVersion: params.protocolVersion,
+        supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
         requestId: request.id,
+        clientName: params.clientInfo?.name || 'unknown',
       });
-      const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
-      if (isDebugMode) {
-        logger.debug("McpServerService", "Protocol version mismatch", {
-          // Don't log client-supplied data (protocolVersion, clientInfo) to avoid logging sensitive information
-          supported: SUPPORTED_PROTOCOL_VERSION,
-          // Only log safe metadata: client name if available (already extracted and stored)
-          clientName: params.clientInfo?.name || 'unknown',
-        });
-      }
       return createJsonRpcError(
         request.id,
         JsonRpcErrorCode.InvalidParams,
-        `Unsupported protocol version: ${params.protocolVersion}. Supported version: ${SUPPORTED_PROTOCOL_VERSION}. Please update your client to use protocol version ${SUPPORTED_PROTOCOL_VERSION}.`,
+        `Unsupported protocol version: ${params.protocolVersion}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}. Please update your client to use protocol version ${PRIMARY_PROTOCOL_VERSION}.`,
       );
+    }
+    
+    // Log if using legacy or intermediate version
+    if (params.protocolVersion !== PRIMARY_PROTOCOL_VERSION) {
+      logger.info("McpServerService", "Client using non-primary protocol version", {
+        component: "Layer 3",
+        clientVersion: params.protocolVersion,
+        recommendedVersion: PRIMARY_PROTOCOL_VERSION,
+        requestId: request.id,
+        clientName: params.clientInfo?.name || 'unknown',
+      });
     }
 
     const config = this.configHolder.getConfig();
     const hasResources = config.resources && config.resources.length > 0;
     const hasPrompts = config.prompts && config.prompts.length > 0;
     
+    // Respond with the client's requested protocol version (or primary if client requests newer)
+    // This ensures compatibility - server responds with the version it supports that matches client's request
+    const responseProtocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)
+      ? params.protocolVersion
+      : PRIMARY_PROTOCOL_VERSION;
+    
     const result: InitializeResult = {
-      protocolVersion: SUPPORTED_PROTOCOL_VERSION,
+      protocolVersion: responseProtocolVersion,
       capabilities: {
         tools: {},
         ...(hasResources && { resources: {} }),

@@ -47,6 +47,9 @@ export {
   ToolNotFoundError,
 } from './core/errors/easy-mcp-error';
 
+// Utilities
+export { ToolNamingValidator } from './core/utils/tool-naming-validator';
+
 // Constants (for advanced use cases)
 export { INTERFACE_LAYER_TOKEN } from './config/constants';
 
