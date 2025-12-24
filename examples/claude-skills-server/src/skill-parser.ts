@@ -111,13 +111,15 @@ export function parseSkillToTool(skill: LoadedSkill): ToolRegistrationInput {
     }
   }
 
-  // Validate and transform tool name if it matches reserved patterns
-  let toolName = metadata.name;
+  // Validate tool name - throw error if invalid instead of auto-transforming
+  const toolName = metadata.name;
   const namingError = ToolNamingValidator.validate(toolName);
   if (namingError) {
     const suggestedName = ToolNamingValidator.suggest(toolName);
-    console.error(`Warning: Skill '${toolName}' has an invalid tool name. Auto-transforming to '${suggestedName}'`);
-    toolName = suggestedName;
+    throw new Error(
+      `Skill '${toolName}' has an invalid name. ` +
+      `Please fix it. Suggestion: '${suggestedName}'.`
+    );
   }
 
   // Create the tool registration input

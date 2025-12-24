@@ -52,7 +52,8 @@ function parseFrontmatter(content: string): { frontmatter: any; content: string 
   try {
     // In js-yaml v4+, load() is safe by default and replaces safeLoad()
     // It prevents prototype pollution and unsafe type parsing
-    const frontmatter = yaml.load(frontmatterYaml) as any;
+    // Use JSON_SCHEMA to restrict parsing to JSON-compliant types for additional security
+    const frontmatter = yaml.load(frontmatterYaml, { schema: yaml.JSON_SCHEMA }) as any;
     return { frontmatter, content: markdownContent.trim() };
   } catch (error) {
     // Sanitize error message to prevent information leakage

@@ -331,12 +331,15 @@ export class McpServerService implements OnModuleInit {
     const PRIMARY_PROTOCOL_VERSION = "2025-11-25";
     
     if (!SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)) {
+      // Sanitize untrusted client-supplied data before logging
+      const sanitizedClientVersion = sanitizeName(params.protocolVersion);
+      const sanitizedClientName = params.clientInfo?.name ? sanitizeName(params.clientInfo.name) : 'unknown';
       logger.warn("McpServerService", "Unsupported protocol version", {
         component: "Layer 3",
-        clientVersion: params.protocolVersion,
+        clientVersion: sanitizedClientVersion,
         supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
         requestId: request.id,
-        clientName: params.clientInfo?.name || 'unknown',
+        clientName: sanitizedClientName,
       });
       return createJsonRpcError(
         request.id,
@@ -347,12 +350,15 @@ export class McpServerService implements OnModuleInit {
     
     // Log if using legacy or intermediate version
     if (params.protocolVersion !== PRIMARY_PROTOCOL_VERSION) {
+      // Sanitize untrusted client-supplied data before logging
+      const sanitizedClientVersion = sanitizeName(params.protocolVersion);
+      const sanitizedClientName = params.clientInfo?.name ? sanitizeName(params.clientInfo.name) : 'unknown';
       logger.info("McpServerService", "Client using non-primary protocol version", {
         component: "Layer 3",
-        clientVersion: params.protocolVersion,
+        clientVersion: sanitizedClientVersion,
         recommendedVersion: PRIMARY_PROTOCOL_VERSION,
         requestId: request.id,
-        clientName: params.clientInfo?.name || 'unknown',
+        clientName: sanitizedClientName,
       });
     }
 
@@ -360,11 +366,9 @@ export class McpServerService implements OnModuleInit {
     const hasResources = config.resources && config.resources.length > 0;
     const hasPrompts = config.prompts && config.prompts.length > 0;
     
-    // Respond with the client's requested protocol version (or primary if client requests newer)
-    // This ensures compatibility - server responds with the version it supports that matches client's request
-    const responseProtocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)
-      ? params.protocolVersion
-      : PRIMARY_PROTOCOL_VERSION;
+    // Respond with the client's requested protocol version.
+    // At this point, we've already validated that the client's version is supported.
+    const responseProtocolVersion = params.protocolVersion;
     
     const result: InitializeResult = {
       protocolVersion: responseProtocolVersion,
