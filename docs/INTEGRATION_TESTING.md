@@ -44,7 +44,7 @@ Claude Desktop is Anthropic's official MCP client. Follow these steps to test Ea
 Create a file `my-mcp-server.js`:
 
 ```javascript
-const { EasyMCP } = require('easy-mcp-framework');
+const { EasyMCP } = require('easy-mcp-nest');
 
 const config = {
   tools: [
@@ -246,7 +246,7 @@ MCP servers should log to stderr (not stdout). Check stderr output for:
 Here's a complete example server for testing:
 
 ```javascript
-const { EasyMCP } = require('easy-mcp-framework');
+const { EasyMCP } = require('easy-mcp-nest');
 
 const config = {
   tools: [

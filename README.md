@@ -14,11 +14,11 @@ EasyMCP simplifies the creation of MCP (Model Context Protocol) servers by provi
 ## Installation
 
 ```bash
-npm install easy-mcp-framework
+npm install easy-mcp-nest
 # or
-pnpm add easy-mcp-framework
+pnpm add easy-mcp-nest
 # or
-yarn add easy-mcp-framework
+yarn add easy-mcp-nest
 ```
 
 ### Peer Dependencies
@@ -38,7 +38,7 @@ npm install @nestjs/common@^11.0.1 @nestjs/core@^11.0.1 @nestjs/platform-express
 ## Quick Start
 
 ```typescript
-import { EasyMCP, McpConfig } from 'easy-mcp-framework';
+import { EasyMCP, McpConfig } from 'easy-mcp-nest';
 
 // Define your tools
 async function getUser(args: { userId: string }): Promise<string> {
@@ -301,7 +301,7 @@ import {
   ConfigurationError, 
   ToolExecutionError, 
   ToolNotFoundError
-} from 'easy-mcp-framework';
+} from 'easy-mcp-nest';
 
 // Configuration errors - caught during initialization
 try {
@@ -364,7 +364,7 @@ If tools are registered but not being called:
 If you encounter TypeScript or import errors:
 
 1. **Peer Dependencies**: Ensure all peer dependencies are installed (see Installation section)
-2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-framework'`
+2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-nest'`
 3. **Build Output**: Check that `dist/index.js` and `dist/index.d.ts` exist after building
 4. **Module Resolution**: Ensure your `tsconfig.json` has proper module resolution settings
 

@@ -1,5 +1,5 @@
 import { LoadedSkill, SkillParameter } from './skill-loader';
-import { ToolRegistrationInput } from 'easy-mcp-framework';
+import { ToolRegistrationInput } from 'easy-mcp-nest';
 
 /**
  * Type mapping from Claude Skill parameter types to EasyMCP framework types

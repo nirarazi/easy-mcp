@@ -17,7 +17,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "easy-mcp-framework": "file:../..",
+    "easy-mcp-nest": "file:../..",
     "js-yaml": "^4.1.0",
     "glob": "^11.0.0"
   },
