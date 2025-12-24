@@ -56,7 +56,14 @@ export class EasyMCP {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedToolName = sanitizeName(tool.name);
-          throw new Error(`Failed to register tool '${sanitizedToolName}': ${errorMessage}`);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register tool", {
+            component: "EasyMCP",
+            toolName: sanitizedToolName,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register tool '${sanitizedToolName}'`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
@@ -74,7 +81,14 @@ export class EasyMCP {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedUri = sanitizeUri(resource.uri);
-          throw new Error(`Failed to register resource '${sanitizedUri}': ${errorMessage}`);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register resource", {
+            component: "EasyMCP",
+            uri: sanitizedUri,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register resource '${sanitizedUri}'`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.resources.length} resource(s) from configuration`, {
@@ -92,7 +106,14 @@ export class EasyMCP {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedPromptName = sanitizeName(prompt.name);
-          throw new Error(`Failed to register prompt '${sanitizedPromptName}': ${errorMessage}`);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register prompt", {
+            component: "EasyMCP",
+            promptName: sanitizedPromptName,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register prompt '${sanitizedPromptName}'`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.prompts.length} prompt(s) from configuration`, {

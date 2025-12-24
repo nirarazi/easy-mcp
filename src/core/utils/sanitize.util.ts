@@ -3,6 +3,24 @@
  */
 
 /**
+ * Dangerous object keys that can be used for prototype pollution attacks.
+ */
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Checks if a key is safe to use as an object property name.
+ * Prevents prototype pollution by rejecting dangerous keys.
+ * @param key The key to check
+ * @returns true if the key is safe, false otherwise
+ */
+export function isSafeObjectKey(key: string): boolean {
+  if (typeof key !== 'string') {
+    return false;
+  }
+  return !DANGEROUS_KEYS.has(key);
+}
+
+/**
  * Sanitizes a value to prevent sensitive data exposure.
  * Replaces potentially sensitive values with a redacted placeholder.
  * @param value The value to sanitize

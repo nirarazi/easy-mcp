@@ -3,6 +3,7 @@ import { ToolDefinition, ToolParameter } from "../tool.interface";
 import { ToolRegistrationInput, JsonSchema2020_12 } from "../../config/mcp-config.interface";
 import { ToolNotFoundError, ToolExecutionError } from "../../core/errors/easy-mcp-error";
 import { logger } from "../../core/utils/logger.util";
+import { isSafeObjectKey } from "../../core/utils/sanitize.util";
 
 /**
  * Type representing a tool schema in the format expected by LLM providers.
@@ -103,7 +104,7 @@ export class ToolRegistryService {
         required: toolInput.inputSchema.required || [],
         ...Object.fromEntries(
           Object.entries(toolInput.inputSchema).filter(
-            ([key]) => !["type", "properties", "required"].includes(key)
+            ([key]) => !["type", "properties", "required"].includes(key) && isSafeObjectKey(key)
           )
         ),
       },
@@ -153,7 +154,10 @@ export class ToolRegistryService {
       schema.type = schema.type ?? "object";
       schema.properties = {};
       for (const [key, value] of Object.entries(param.properties)) {
-        schema.properties[key] = this.convertToolParameterToJsonSchema(value);
+        // Prevent prototype pollution by only copying safe keys
+        if (isSafeObjectKey(key)) {
+          schema.properties[key] = this.convertToolParameterToJsonSchema(value);
+        }
       }
       if (Array.isArray(param.required)) {
         schema.required = param.required;
@@ -168,7 +172,7 @@ export class ToolRegistryService {
         : this.convertToolParameterToJsonSchema(param.items);
     }
 
-    // Copy any additional properties
+    // Copy any additional properties (prevent prototype pollution)
     for (const [key, value] of Object.entries(param)) {
       if (
         ![
@@ -184,7 +188,8 @@ export class ToolRegistryService {
           "allOf",
           "properties",
           "items",
-        ].includes(key)
+        ].includes(key) &&
+        isSafeObjectKey(key)
       ) {
         schema[key] = value;
       }
@@ -206,17 +211,20 @@ export class ToolRegistryService {
         ...(tool.inputSchema.required && { required: tool.inputSchema.required }),
       };
 
-      // Convert properties if they exist
+      // Convert properties if they exist (prevent prototype pollution)
       if (tool.inputSchema.properties) {
         convertedSchema.properties = {};
         for (const [key, value] of Object.entries(tool.inputSchema.properties)) {
-          convertedSchema.properties[key] = this.convertToolParameterToJsonSchema(value);
+          // Only copy safe keys to prevent prototype pollution
+          if (isSafeObjectKey(key)) {
+            convertedSchema.properties[key] = this.convertToolParameterToJsonSchema(value);
+          }
         }
       }
 
-      // Copy any additional properties from inputSchema
+      // Copy any additional properties from inputSchema (prevent prototype pollution)
       for (const [key, value] of Object.entries(tool.inputSchema)) {
-        if (!["type", "properties", "required"].includes(key)) {
+        if (!["type", "properties", "required"].includes(key) && isSafeObjectKey(key)) {
           (convertedSchema as any)[key] = value;
         }
       }
