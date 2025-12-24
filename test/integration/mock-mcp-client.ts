@@ -210,7 +210,7 @@ export class MockMcpClient extends EventEmitter {
   /**
    * Sends initialize request
    */
-  async initialize(protocolVersion: string = '2024-11-05', clientInfo?: { name: string; version: string }): Promise<JsonRpcResponse> {
+  async initialize(protocolVersion: string = '2025-11-25', clientInfo?: { name: string; version: string }): Promise<JsonRpcResponse> {
     return this.sendRequest('initialize', {
       protocolVersion,
       capabilities: {},

@@ -13,7 +13,7 @@ This example shows how to configure EasyMCP to work with Cursor's MCP client.
 Create a file `cursor-mcp-server.js`:
 
 ```javascript
-const { EasyMCP } = require('easy-mcp-framework');
+const { EasyMCP } = require('easy-mcp-nest');
 
 const config = {
   tools: [

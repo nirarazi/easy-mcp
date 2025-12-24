@@ -18,22 +18,45 @@ import {
   CallToolParams,
   CallToolResult,
   McpErrorCode,
+  ListResourcesResult,
+  McpResource,
+  ReadResourceParams,
+  ReadResourceResult,
+  ListPromptsResult,
+  McpPrompt,
+  GetPromptParams,
+  GetPromptResult,
+  SamplingRequestParams,
+  SamplingResult,
+  ListRootsResult,
+  ReadRootParams,
+  ReadRootResult,
+  ElicitParams,
+  ElicitResult,
 } from "../../interface/mcp-protocol.interface";
+import { ResourceRegistryService } from "../../resources/resource-registry.service";
+import { PromptRegistryService } from "../../prompts/prompt-registry.service";
 import { ToolNotFoundError, ToolExecutionError } from "../errors/easy-mcp-error";
 import { CONFIG_TOKEN } from "../../config/constants";
 import { ConfigHolderService } from "../../config/config-holder.service";
 import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolResult, sanitizeErrorMessage } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
+import { CancellationToken } from "../../tooling/tool.interface";
+import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
   // Store client identifier from initialize request for audit logging
   private clientIdentifier: string = "stdio-client";
+  // Map of request IDs to cancellation tokens for handling $/cancelRequest
+  private readonly cancellationTokens = new Map<string | number, CancellationToken>();
 
   constructor(
     private readonly toolRegistry: ToolRegistryService,
+    private readonly resourceRegistry: ResourceRegistryService,
+    private readonly promptRegistry: PromptRegistryService,
     @Inject(INTERFACE_LAYER_TOKEN)
     private readonly interfaceLayer: IInterfaceLayer,
     private readonly stdioGatewayService: StdioGatewayService,
@@ -153,6 +176,107 @@ export class McpServerService implements OnModuleInit {
           response = await this.handleCallTool(request);
           // Audit logging for tools/call is done inside handleCallTool for more detail
           return response;
+        case "resources/list":
+          response = this.handleListResources(request);
+          logger.audit(
+            "McpServerService",
+            "resources/list",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "resources/read":
+          response = await this.handleReadResource(request);
+          const readResourceParams = request.params as { uri?: string } | undefined;
+          logger.audit(
+            "McpServerService",
+            "resources/read",
+            response.error ? "failure" : "success",
+            {
+              method: request.method,
+              ...(readResourceParams?.uri && { uri: sanitizeUri(readResourceParams.uri) }),
+            },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "prompts/list":
+          response = this.handleListPrompts(request);
+          logger.audit(
+            "McpServerService",
+            "prompts/list",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "prompts/get":
+          response = await this.handleGetPrompt(request);
+          const getPromptParams = request.params as { name?: string } | undefined;
+          logger.audit(
+            "McpServerService",
+            "prompts/get",
+            response.error ? "failure" : "success",
+            {
+              method: request.method,
+              ...(getPromptParams?.name && { promptName: sanitizeName(getPromptParams.name) }),
+            },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "sampling/create":
+          response = await this.handleSampling(request);
+          logger.audit(
+            "McpServerService",
+            "sampling/create",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "roots/list":
+          response = this.handleListRoots(request);
+          logger.audit(
+            "McpServerService",
+            "roots/list",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "roots/read":
+          response = await this.handleReadRoot(request);
+          logger.audit(
+            "McpServerService",
+            "roots/read",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "elicitation/elicit":
+          response = await this.handleElicitation(request);
+          logger.audit(
+            "McpServerService",
+            "elicitation/elicit",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
+          return response;
+        case "$/cancelRequest":
+          // This is a notification (id is null), so we handle it but don't return a response
+          this.handleCancelRequest(request);
+          // Return a special marker to indicate this was a notification
+          return { jsonrpc: "2.0", id: null } as JsonRpcResponse;
         default:
           logger.warn("McpServerService", "Method not found", {
             component: "Layer 3",
@@ -199,8 +323,8 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
-    // Validate protocol version - currently only 2024-11-05 is supported
-    const SUPPORTED_PROTOCOL_VERSION = "2024-11-05";
+    // Validate protocol version - currently only 2025-11-25 is supported
+    const SUPPORTED_PROTOCOL_VERSION = "2025-11-25";
     if (params.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
       logger.warn("McpServerService", "Unsupported protocol version", {
         component: "Layer 3",
@@ -224,10 +348,16 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    const config = this.configHolder.getConfig();
+    const hasResources = config.resources && config.resources.length > 0;
+    const hasPrompts = config.prompts && config.prompts.length > 0;
+    
     const result: InitializeResult = {
       protocolVersion: SUPPORTED_PROTOCOL_VERSION,
       capabilities: {
         tools: {},
+        ...(hasResources && { resources: {} }),
+        ...(hasPrompts && { prompts: {} }),
       },
       serverInfo: this.getServerInfo(),
     };
@@ -243,11 +373,17 @@ export class McpServerService implements OnModuleInit {
     request: JsonRpcRequest,
   ): JsonRpcResponse {
     const tools = this.toolRegistry.getToolSchemasForLLM();
-    const mcpTools: McpTool[] = tools.map((tool) => ({
-      name: tool.function.name,
-      description: tool.function.description,
-      inputSchema: tool.function.parameters,
-    }));
+    
+    const mcpTools: McpTool[] = tools.map((tool) => {
+      // Get tool definition to access icon
+      const toolDef = this.toolRegistry.getTool(tool.function.name);
+      return {
+        name: tool.function.name,
+        description: tool.function.description,
+        inputSchema: tool.function.parameters,
+        ...(toolDef?.icon && { icon: toolDef.icon }),
+      };
+    });
 
     const result: ListToolsResult = {
       tools: mcpTools,
@@ -321,7 +457,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "Invalid arguments type - must be a plain object",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -346,7 +482,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Tool not found",
-          toolName,
+          toolName: sanitizeName(toolName),
           method: request.method,
         },
         request.id,
@@ -359,11 +495,10 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
-    // Validate arguments against tool schema
+    // Validate arguments against tool schema (JSON Schema 2020-12)
     const validationError = validateToolArguments(
       args,
-      tool.parameters,
-      tool.required,
+      tool.inputSchema,
     );
     if (validationError) {
       logger.audit(
@@ -372,7 +507,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Invalid arguments",
-          toolName,
+          toolName: sanitizeName(toolName),
           validationError,
           method: request.method,
         },
@@ -382,11 +517,16 @@ export class McpServerService implements OnModuleInit {
       const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
       if (isDebugMode) {
         logger.debug("McpServerService", "Tool argument validation failed", {
-          toolName,
+          toolName: sanitizeName(toolName),
           validationError,
           providedArgs: Object.keys(args),
-          expectedParams: Object.keys(tool.parameters),
-          requiredParams: tool.required,
+          expectedParams:
+            tool.inputSchema.properties &&
+            typeof tool.inputSchema.properties === "object" &&
+            !Array.isArray(tool.inputSchema.properties)
+              ? Object.keys(tool.inputSchema.properties)
+              : [],
+          requiredParams: Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [],
         });
       }
       return createJsonRpcError(
@@ -396,8 +536,39 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    // Create cancellation token for this request
+    const cancellationToken: CancellationToken = {
+      isCancelled: false,
+      onCancel: () => {}, // Placeholder for event listener
+      cancel: () => {
+        cancellationToken.isCancelled = true;
+      },
+    };
+
+    // Store cancellation token for this request if it has an ID
+    // Enforce size limit to prevent memory DoS
+    if (request.id !== null && request.id !== undefined) {
+      // If map is at capacity, remove oldest entry (simple FIFO eviction)
+      if (this.cancellationTokens.size >= MAX_CANCELLATION_TOKENS) {
+        const firstKey = this.cancellationTokens.keys().next().value;
+        if (firstKey !== undefined) {
+          this.cancellationTokens.delete(firstKey);
+        }
+      }
+      this.cancellationTokens.set(request.id, cancellationToken);
+    }
+
     try {
-      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args);
+      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken);
+      
+      // Check if cancelled during execution
+      if (cancellationToken.isCancelled) {
+        return createJsonRpcError(
+          request.id,
+          McpErrorCode.RequestCancelled,
+          "Request was cancelled",
+        );
+      }
 
       // Sanitize result to prevent sensitive data exposure
       const sanitizedResult = sanitizeToolResult(toolResult);
@@ -418,7 +589,7 @@ export class McpServerService implements OnModuleInit {
         "tools/call",
         "success",
         {
-          toolName,
+          toolName: sanitizeName(toolName),
           resultSize: sanitizedResult.length,
           method: request.method,
         },
@@ -436,7 +607,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "ToolNotFoundError",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -456,7 +627,7 @@ export class McpServerService implements OnModuleInit {
           "failure",
           {
             reason: "ToolExecutionError",
-            toolName,
+            toolName: sanitizeName(toolName),
             method: request.method,
           },
           request.id,
@@ -473,7 +644,7 @@ export class McpServerService implements OnModuleInit {
       // Unknown error - log for debugging but don't expose details to client
       logger.error("McpServerService", "Unknown error during tool execution", {
         component: "Layer 3",
-        toolName,
+        toolName: sanitizeName(toolName),
         requestId: request.id,
         error: sanitizeErrorMessage(error),
       });
@@ -484,7 +655,7 @@ export class McpServerService implements OnModuleInit {
         "failure",
         {
           reason: "Unknown error",
-          toolName,
+          toolName: sanitizeName(toolName),
           method: request.method,
         },
         request.id,
@@ -497,6 +668,363 @@ export class McpServerService implements OnModuleInit {
         McpErrorCode.ToolExecutionError,
         "Tool execution failed",
       );
+    } finally {
+      // Clean up the cancellation token after the request is finished
+      if (request.id !== null && request.id !== undefined) {
+        this.cancellationTokens.delete(request.id);
+      }
     }
+  }
+
+  /**
+   * Handles the $/cancelRequest notification.
+   * Cancels the request with the specified requestId if it exists.
+   */
+  private handleCancelRequest(request: JsonRpcRequest): void {
+    const params = request.params as { requestId?: string | number } | undefined;
+    if (params?.requestId !== undefined) {
+      const token = this.cancellationTokens.get(params.requestId);
+      if (token) {
+        token.cancel();
+        logger.debug("McpServerService", "Request cancelled", {
+          component: "Layer 3",
+          requestId: params.requestId,
+        });
+      }
+    }
+  }
+
+  /**
+   * Handles the resources/list request.
+   * Returns all registered resources in MCP format.
+   */
+  private handleListResources(
+    request: JsonRpcRequest,
+  ): JsonRpcResponse {
+    const resources = this.resourceRegistry.getAllResources();
+    const mcpResources: McpResource[] = resources.map((resource) => ({
+      uri: resource.uri,
+      name: resource.name,
+      ...(resource.description && { description: resource.description }),
+      ...(resource.mimeType && { mimeType: resource.mimeType }),
+      ...(resource.icon && { icon: resource.icon }),
+    }));
+
+    const result: ListResourcesResult = {
+      resources: mcpResources,
+    };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles the resources/read request.
+   * Returns the content of the requested resource.
+   */
+  private async handleReadResource(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as ReadResourceParams | undefined;
+
+    if (!params || !params.uri || typeof params.uri !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid uri parameter",
+      );
+    }
+
+    const resource = this.resourceRegistry.getResource(params.uri);
+    if (!resource) {
+      // Log URI internally for debugging, but don't expose it in user-facing error
+      logger.debug("McpServerService", "Resource not found", {
+        component: "Layer 3",
+        uri: sanitizeUri(params.uri),
+        requestId: request.id,
+      });
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ResourceNotFound,
+        "Resource not found",
+      );
+    }
+
+    try {
+      const content = await this.resourceRegistry.getResourceContent(params.uri);
+      
+      // Handle different content formats
+      let contents: Array<{
+        uri: string;
+        mimeType?: string;
+        text?: string;
+        blob?: string;
+      }>;
+
+      // Check content size to prevent unbounded response DoS
+      let contentSize: number;
+      let contentData: string;
+      
+      if (typeof content === "string") {
+        contentData = content;
+        contentSize = Buffer.byteLength(content, "utf8");
+      } else {
+        const contentType = content.type;
+        if (contentType !== "text" && contentType !== "blob") {
+          logger.error("McpServerService", "Invalid resource content type", {
+            component: "Layer 3",
+            uri: sanitizeUri(params.uri),
+            contentType,
+            requestId: request.id,
+          });
+          return createJsonRpcError(
+            request.id,
+            JsonRpcErrorCode.InternalError,
+            "Internal error",
+          );
+        }
+
+        contentData = content.data;
+        // For blob data, estimate size (base64 encoded data is ~33% larger)
+        if (contentType === "blob") {
+          contentSize = Math.ceil(contentData.length * 0.75); // Approximate decoded size
+        } else {
+          contentSize = Buffer.byteLength(contentData, "utf8");
+        }
+      }
+
+      // Enforce size limit
+      if (contentSize > MAX_RESOURCE_CONTENT_SIZE_BYTES) {
+        logger.error("McpServerService", "Resource content exceeds maximum size", {
+          component: "Layer 3",
+          uri: sanitizeUri(params.uri),
+          contentSize,
+          maxSize: MAX_RESOURCE_CONTENT_SIZE_BYTES,
+          requestId: request.id,
+        });
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InternalError,
+          "Resource content too large",
+        );
+      }
+
+      // Build contents array
+      if (typeof content === "string") {
+        contents = [{
+          uri: params.uri,
+          mimeType: resource.mimeType,
+          text: contentData,
+        }];
+      } else {
+        const contentType = content.type;
+        contents = [{
+          uri: params.uri,
+          mimeType: content.mimeType || resource.mimeType,
+          ...(contentType === "text" ? { text: contentData } : { blob: contentData }),
+        }];
+      }
+
+      const result: ReadResourceResult = {
+        contents,
+      };
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      logger.error("McpServerService", "Error reading resource", {
+        component: "Layer 3",
+        uri: sanitizeUri(params.uri),
+        requestId: request.id,
+        error: sanitizeErrorMessage(error),
+      });
+      // Use InternalError for read failures (not ResourceNotFound) to distinguish from not-found cases
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InternalError,
+        "Internal error",
+      );
+    }
+  }
+
+  /**
+   * Handles the prompts/list request.
+   * Returns all registered prompts in MCP format.
+   */
+  private handleListPrompts(
+    request: JsonRpcRequest,
+  ): JsonRpcResponse {
+    const prompts = this.promptRegistry.getAllPrompts();
+    const mcpPrompts: McpPrompt[] = prompts.map((prompt) => ({
+      name: prompt.name,
+      ...(prompt.description && { description: prompt.description }),
+      ...(prompt.arguments && { arguments: prompt.arguments }),
+      ...(prompt.icon && { icon: prompt.icon }),
+    }));
+
+    const result: ListPromptsResult = {
+      prompts: mcpPrompts,
+    };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles the prompts/get request.
+   * Returns the prompt content generated from arguments.
+   */
+  private async handleGetPrompt(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as GetPromptParams | undefined;
+
+    if (!params || !params.name || typeof params.name !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid name parameter",
+      );
+    }
+
+    const prompt = this.promptRegistry.getPrompt(params.name);
+    if (!prompt) {
+      // Log prompt name internally for debugging, but don't expose it in user-facing error
+      logger.debug("McpServerService", "Prompt not found", {
+        component: "Layer 3",
+        promptName: sanitizeName(params.name),
+        requestId: request.id,
+      });
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.PromptNotFound,
+        "Prompt not found",
+      );
+    }
+
+    // Validate that arguments is an object if provided
+    if (params.arguments !== undefined && (typeof params.arguments !== "object" || params.arguments === null || Array.isArray(params.arguments))) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Arguments must be a plain object",
+      );
+    }
+
+    const args = params.arguments || {};
+
+    // Validate required prompt arguments
+    if (prompt.arguments) {
+      for (const argDef of prompt.arguments.filter(a => a.required)) {
+        if (args[argDef.name] === undefined) {
+          return createJsonRpcError(
+            request.id,
+            JsonRpcErrorCode.InvalidParams,
+            `Missing required prompt argument: ${argDef.name}`,
+          );
+        }
+      }
+    }
+
+    try {
+      const messages = await this.promptRegistry.getPromptContent(params.name, args);
+
+      const result: GetPromptResult = {
+        messages,
+      };
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      logger.error("McpServerService", "Error getting prompt", {
+        component: "Layer 3",
+        promptName: sanitizeName(params.name),
+        requestId: request.id,
+        error: sanitizeErrorMessage(error),
+      });
+      // Use InternalError for generation failures (not PromptNotFound) to distinguish from not-found cases
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InternalError,
+        "Internal error",
+      );
+    }
+  }
+
+  /**
+   * Handles the sampling/create request (client feature).
+   * Note: This is a placeholder implementation. Actual sampling requires LLM integration.
+   */
+  private async handleSampling(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    // Sampling is a client feature - servers typically don't implement this
+    // This is a placeholder that returns an error indicating it's not supported
+    return createJsonRpcError(
+      request.id,
+      McpErrorCode.SamplingNotSupported,
+      "Sampling is a client feature and is not supported by this server",
+    );
+  }
+
+  /**
+   * Handles the roots/list request (client feature).
+   * Returns available root URIs that the server can access.
+   */
+  private handleListRoots(
+    request: JsonRpcRequest,
+  ): JsonRpcResponse {
+    // Roots allow servers to inquire about URI/filesystem boundaries
+    // This is a placeholder - actual implementation would depend on server configuration
+    const result: ListRootsResult = {
+      roots: [],
+    };
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles the roots/read request (client feature).
+   * Reads content from a root URI.
+   */
+  private async handleReadRoot(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as ReadRootParams | undefined;
+
+    if (!params || !params.uri || typeof params.uri !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid uri parameter",
+      );
+    }
+
+    // Roots is a client feature - this is a placeholder
+    return createJsonRpcError(
+      request.id,
+      McpErrorCode.RootsNotSupported,
+      "Roots is a client feature and is not supported by this server",
+    );
+  }
+
+  /**
+   * Handles the elicitation/elicit request (client feature).
+   * Requests additional information from the user.
+   */
+  private async handleElicitation(
+    request: JsonRpcRequest,
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as ElicitParams | undefined;
+
+    if (!params || !params.schema) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid schema parameter",
+      );
+    }
+
+    // Elicitation is a client feature - this is a placeholder
+    return createJsonRpcError(
+      request.id,
+      McpErrorCode.ElicitationNotSupported,
+      "Elicitation is a client feature and is not supported by this server",
+    );
   }
 }

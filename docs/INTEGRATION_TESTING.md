@@ -44,7 +44,7 @@ Claude Desktop is Anthropic's official MCP client. Follow these steps to test Ea
 Create a file `my-mcp-server.js`:
 
 ```javascript
-const { EasyMCP } = require('easy-mcp-framework');
+const { EasyMCP } = require('easy-mcp-nest');
 
 const config = {
   tools: [
@@ -203,7 +203,7 @@ Most MCP clients expect:
 To verify that your EasyMCP server is protocol-compliant:
 
 1. **Run Integration Tests**: The automated integration tests verify basic compliance
-2. **Check Protocol Version**: Ensure your server returns protocol version "2024-11-05"
+2. **Check Protocol Version**: Ensure your server returns protocol version "2025-11-25"
 3. **Verify Error Codes**: Test error scenarios and verify correct error codes are returned
 4. **Test Tool Schemas**: Ensure tool schemas match JSON Schema format expected by clients
 
@@ -211,11 +211,23 @@ To verify that your EasyMCP server is protocol-compliant:
 
 ### Enable Debug Logging
 
-Add debug logging to your server script:
+Enable debug logging by setting the `DEBUG` environment variable:
+
+```bash
+DEBUG=1 node your-server.js
+# or
+DEBUG=true node your-server.js
+```
+
+Or in your server script:
 
 ```javascript
-process.env.DEBUG = 'easy-mcp:*';
+process.env.DEBUG = '1';
+// or
+process.env.DEBUG = 'true';
 ```
+
+**Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
 
 ### Check Server Logs
 
@@ -228,7 +240,7 @@ MCP servers should log to stderr (not stdout). Check stderr output for:
 ### Common Issues
 
 **Protocol Version Mismatch:**
-- Ensure client sends protocol version "2024-11-05"
+- Ensure client sends protocol version "2025-11-25"
 - Check server logs for version validation errors
 
 **Tool Execution Failures:**
@@ -246,7 +258,7 @@ MCP servers should log to stderr (not stdout). Check stderr output for:
 Here's a complete example server for testing:
 
 ```javascript
-const { EasyMCP } = require('easy-mcp-framework');
+const { EasyMCP } = require('easy-mcp-nest');
 
 const config = {
   tools: [

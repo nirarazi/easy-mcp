@@ -10,6 +10,8 @@ import {
 } from "../../interface/jsonrpc.interface";
 import { ConfigHolderService } from "../../config/config-holder.service";
 import { McpConfig } from "../../config/mcp-config.interface";
+import { ResourceRegistryService } from "../../resources/resource-registry.service";
+import { PromptRegistryService } from "../../prompts/prompt-registry.service";
 
 describe("McpServerService", () => {
   let service: McpServerService;
@@ -21,14 +23,14 @@ describe("McpServerService", () => {
   const mockConfig: McpConfig = {
     tools: [
       {
-        name: "testTool",
+        name: "test_tool",
         description: "A test tool",
         function: async () => "result",
         inputSchema: {
-          type: "OBJECT",
+          type: "object",
           properties: {
             param: {
-              type: "STRING",
+              type: "string",
               description: "A parameter",
             },
           },
@@ -40,16 +42,19 @@ describe("McpServerService", () => {
 
   beforeEach(async () => {
     const mockTool = {
-      name: "testTool",
+      name: "test_tool",
       description: "A test tool",
       execute: jest.fn(),
-      parameters: {
-        param: {
-          type: "string" as const,
-          description: "A parameter",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          param: {
+            type: "string" as const,
+            description: "A parameter",
+          },
         },
+        required: ["param"],
       },
-      required: ["param"],
     };
 
     const mockToolRegistry = {
@@ -57,7 +62,7 @@ describe("McpServerService", () => {
         {
           type: "function",
           function: {
-            name: "testTool",
+            name: "test_tool",
             description: "A test tool",
             parameters: {
               type: "object",
@@ -90,10 +95,24 @@ describe("McpServerService", () => {
       setConfig: jest.fn(),
     };
 
+    const mockResourceRegistry = {
+      getAllResources: jest.fn().mockReturnValue([]),
+      getResource: jest.fn(),
+      getResourceContent: jest.fn(),
+    };
+
+    const mockPromptRegistry = {
+      getAllPrompts: jest.fn().mockReturnValue([]),
+      getPrompt: jest.fn(),
+      getPromptContent: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         McpServerService,
         { provide: ToolRegistryService, useValue: mockToolRegistry },
+        { provide: ResourceRegistryService, useValue: mockResourceRegistry },
+        { provide: PromptRegistryService, useValue: mockPromptRegistry },
         {
           provide: StdioGatewayService,
           useValue: mockStdioGateway,
@@ -121,7 +140,7 @@ describe("McpServerService", () => {
         id: 1,
         method: "initialize",
         params: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: "2025-11-25",
         },
       };
 
@@ -130,7 +149,7 @@ describe("McpServerService", () => {
       expect(response.jsonrpc).toBe("2.0");
       expect(response.id).toBe(1);
       expect(response.result).toBeDefined();
-      expect(response.result.protocolVersion).toBe("2024-11-05");
+      expect(response.result.protocolVersion).toBe("2025-11-25");
       expect(response.result.capabilities).toBeDefined();
       expect(response.result.serverInfo).toBeDefined();
     });
@@ -179,7 +198,7 @@ describe("McpServerService", () => {
         id: 3,
         method: "tools/call",
         params: {
-          name: "testTool",
+          name: "test_tool",
           arguments: { param: "value" },
         },
       };
@@ -190,9 +209,9 @@ describe("McpServerService", () => {
       expect(response.id).toBe(3);
       expect(response.result).toBeDefined();
       expect(response.result.content).toBeDefined();
-      expect(toolRegistry.executeTool).toHaveBeenCalledWith("testTool", {
+      expect(toolRegistry.executeTool).toHaveBeenCalledWith("test_tool", {
         param: "value",
-      });
+      }, expect.anything());
     });
 
     it("should handle unknown method", async () => {
@@ -213,7 +232,7 @@ describe("McpServerService", () => {
     it("should handle tool execution errors", async () => {
       const { ToolExecutionError } = require("../errors/easy-mcp-error");
       toolRegistry.executeTool.mockRejectedValue(
-        new ToolExecutionError("Tool failed", "testTool"),
+        new ToolExecutionError("Tool failed", "test_tool"),
       );
 
       const request: JsonRpcRequest = {
@@ -221,7 +240,7 @@ describe("McpServerService", () => {
         id: 5,
         method: "tools/call",
         params: {
-          name: "testTool",
+          name: "test_tool",
           arguments: { param: "value" }, // Provide required parameter
         },
       };
@@ -243,7 +262,7 @@ describe("McpServerService", () => {
         id: 6,
         method: "tools/call",
         params: {
-          name: "testTool",
+          name: "test_tool",
           arguments: {},
         },
       };

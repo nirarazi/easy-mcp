@@ -7,8 +7,10 @@ import { McpServerService } from "./core/mcp-server/mcp-server.service"; // Assu
 import { ConfigHolderService } from "./config/config-holder.service";
 import { ConfigValidator } from "./config/config-validator";
 import { ToolRegistryService } from "./tooling/tool-registry/tool-registry.service";
+import { ResourceRegistryService } from "./resources/resource-registry.service";
+import { PromptRegistryService } from "./prompts/prompt-registry.service";
 import { logger } from "./core/utils/logger.util";
-import { sanitizeErrorMessage } from "./core/utils/sanitize.util";
+import { sanitizeErrorMessage, sanitizeUri, sanitizeName } from "./core/utils/sanitize.util";
 import { NestjsStderrLogger } from "./core/utils/nestjs-stderr-logger";
 
 // Ensure all classes used within EasyMCP are correctly exported in their respective files.
@@ -53,12 +55,70 @@ export class EasyMCP {
           toolRegistry.registerToolFromConfig(tool);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to register tool '${tool.name}': ${errorMessage}`);
+          const sanitizedToolName = sanitizeName(tool.name);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register tool", {
+            component: "EasyMCP",
+            toolName: sanitizedToolName,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register tool '${sanitizedToolName}'`);
         }
       }
       logger.info("EasyMCP", `Registered ${config.tools.length} tool(s) from configuration`, {
         component: "EasyMCP",
         toolCount: config.tools.length,
+      });
+    }
+
+    // 4. Auto-register resources from config
+    if (config.resources && config.resources.length > 0) {
+      const resourceRegistry = moduleRef.get<ResourceRegistryService>(ResourceRegistryService);
+      for (const resource of config.resources) {
+        try {
+          resourceRegistry.registerResourceFromConfig(resource);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const sanitizedUri = sanitizeUri(resource.uri);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register resource", {
+            component: "EasyMCP",
+            uri: sanitizedUri,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register resource '${sanitizedUri}'`);
+        }
+      }
+      logger.info("EasyMCP", `Registered ${config.resources.length} resource(s) from configuration`, {
+        component: "EasyMCP",
+        resourceCount: config.resources.length,
+      });
+    }
+
+    // 5. Auto-register prompts from config
+    if (config.prompts && config.prompts.length > 0) {
+      const promptRegistry = moduleRef.get<PromptRegistryService>(PromptRegistryService);
+      for (const prompt of config.prompts) {
+        try {
+          promptRegistry.registerPromptFromConfig(prompt);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const sanitizedPromptName = sanitizeName(prompt.name);
+          // Log detailed error internally for debugging
+          logger.error("EasyMCP", "Failed to register prompt", {
+            component: "EasyMCP",
+            promptName: sanitizedPromptName,
+            error: sanitizeErrorMessage(error),
+          });
+          // Return generic error message to prevent leaking internal details
+          throw new Error(`Failed to register prompt '${sanitizedPromptName}'`);
+        }
+      }
+      logger.info("EasyMCP", `Registered ${config.prompts.length} prompt(s) from configuration`, {
+        component: "EasyMCP",
+        promptCount: config.prompts.length,
       });
     }
 

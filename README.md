@@ -14,11 +14,11 @@ EasyMCP simplifies the creation of MCP (Model Context Protocol) servers by provi
 ## Installation
 
 ```bash
-npm install easy-mcp-framework
+npm install easy-mcp-nest
 # or
-pnpm add easy-mcp-framework
+pnpm add easy-mcp-nest
 # or
-yarn add easy-mcp-framework
+yarn add easy-mcp-nest
 ```
 
 ### Peer Dependencies
@@ -38,7 +38,7 @@ npm install @nestjs/common@^11.0.1 @nestjs/core@^11.0.1 @nestjs/platform-express
 ## Quick Start
 
 ```typescript
-import { EasyMCP, McpConfig } from 'easy-mcp-framework';
+import { EasyMCP, McpConfig } from 'easy-mcp-nest';
 
 // Define your tools
 async function getUser(args: { userId: string }): Promise<string> {
@@ -86,6 +86,8 @@ The main configuration object passed to `EasyMCP.initialize()`:
 ```typescript
 interface McpConfig {
   tools: ToolRegistrationInput[];
+  resources?: ResourceRegistrationInput[]; // Optional resources
+  prompts?: PromptRegistrationInput[]; // Optional prompts
   serverInfo?: ServerInfo;
 }
 ```
@@ -100,14 +102,19 @@ interface ToolRegistrationInput {
   description: string;
   function: (args: Record<string, any>) => Promise<any>;
   inputSchema: {
-    type: 'OBJECT';
-    properties: Record<string, {
-      type: 'STRING' | 'NUMBER' | 'INTEGER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT';
-      description: string;
-      enum?: string[];
+    type: 'object'; // JSON Schema 2020-12 format
+    properties?: Record<string, {
+      type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
+      description?: string;
+      enum?: (string | number | boolean)[];
+      default?: any;
+      // Additional JSON Schema 2020-12 properties supported
+      [key: string]: any;
     }>;
     required?: string[];
+    [key: string]: any; // Additional JSON Schema 2020-12 properties
   };
+  icon?: string; // Optional icon URI
 }
 ```
 
@@ -134,20 +141,20 @@ const searchTool: ToolRegistrationInput = {
   name: 'searchDatabase',
   description: 'Searches the database for matching records',
   function: searchDatabase,
-  inputSchema: {
-    type: 'OBJECT',
-    properties: {
-      query: {
-        type: 'STRING',
-        description: 'The search query',
+      inputSchema: {
+        type: 'object', // JSON Schema 2020-12 format
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of results to return',
+          },
+        },
+        required: ['query'],
       },
-      limit: {
-        type: 'INTEGER',
-        description: 'Maximum number of results to return',
-      },
-    },
-    required: ['query'],
-  },
 };
 ```
 
@@ -189,12 +196,16 @@ process.on('SIGINT', async () => {
 - `McpConfig` - Main configuration interface
 - `ToolRegistrationInput` - Tool definition interface
 - `ServerInfo` - Optional server information
-- `JsonRpcRequest`, `JsonRpcResponse` - JSON-RPC 2.0 types
+- `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcError` - JSON-RPC 2.0 types
+- `JsonRpcErrorCode` - JSON-RPC 2.0 error code enum
 - `InitializeParams`, `InitializeResult` - MCP initialize types
 - `ListToolsResult`, `McpTool` - MCP tools types
 - `CallToolParams`, `CallToolResult` - MCP tool call types
 - `ToolDefinition`, `ToolParameter`, `ToolFunction` - Tool interfaces
 - `IInterfaceLayer` - Interface layer interface
+- `McpErrorCode` - MCP error code enum
+- `VERSION`, `PACKAGE_NAME`, `getVersion()`, `getPackageName()` - Version information utilities
+- `INTERFACE_LAYER_TOKEN` - Token for accessing the interface layer (advanced use cases)
 
 ## Architecture
 
@@ -218,11 +229,11 @@ graph TB
 
 ## MCP Protocol Compliance
 
-EasyMCP implements the standard Model Context Protocol (MCP) specification version **2024-11-05**.
+EasyMCP implements the standard Model Context Protocol (MCP) specification version **2025-11-25**.
 
 ### Protocol Version
 
-- **Supported Version**: `2024-11-05`
+- **Supported Version**: `2025-11-25`
 - **Validation**: The framework validates that clients use the supported protocol version during initialization
 - **Error Handling**: Unsupported protocol versions are rejected with a clear error message
 
@@ -235,15 +246,28 @@ EasyMCP implements the following MCP protocol methods:
   - Returns server capabilities (currently supports tools)
   - Returns server information (name and version)
   
-- **`tools/list`** - Returns all registered tools with their JSON Schema definitions
+- **`tools/list`** - Returns all registered tools with their JSON Schema 2020-12 definitions
   - Returns array of tool definitions in MCP format
-  - Each tool includes name, description, and inputSchema
+  - Each tool includes name, description, inputSchema, and optional icon
   
 - **`tools/call`** - Executes a tool with provided arguments and returns the result
-  - Validates tool arguments against schema
+  - Validates tool arguments against JSON Schema 2020-12
   - Executes tool function
   - Returns result in MCP content format
   - Handles errors according to MCP error code specification
+  - Supports cancellation tokens for long-running operations
+
+- **`resources/list`** - Returns all registered resources
+  - Returns array of resource definitions with URI, name, description, mimeType, and optional icon
+
+- **`resources/read`** - Reads the content of a resource by URI
+  - Returns resource content in MCP format
+
+- **`prompts/list`** - Returns all registered prompts
+  - Returns array of prompt definitions with name, description, arguments, and optional icon
+
+- **`prompts/get`** - Generates prompt content from arguments
+  - Returns prompt messages in MCP format
 
 ### Error Codes
 
@@ -274,11 +298,21 @@ MCP_USE_CONTENT_LENGTH=1
 
 This enables the MCP-specified Content-Length header format, which some clients may not parse correctly.
 
+### Features
+
+- **Tools**: Full support for tool registration and execution with JSON Schema 2020-12
+- **Resources**: Support for resource registration and reading
+- **Prompts**: Support for prompt templates and generation
+- **Client Features**: Basic support for Sampling, Roots, and Elicitation (client-initiated)
+- **Metadata/Icons**: Optional icon support for tools, resources, and prompts
+- **Progress & Cancellation**: Basic support for cancellation tokens in tool execution
+- **Tool Naming**: Validation according to MCP 2025-11-25 naming guidelines
+
 ### Limitations
 
 - **Transport**: Currently only stdio transport is supported. WebSocket and HTTP transports are not available.
-- **Capabilities**: Only tools capability is implemented. Resources and prompts capabilities are not yet supported.
-- **Protocol Version**: Only protocol version 2024-11-05 is supported. Older or newer versions will be rejected.
+- **Protocol Version**: Only protocol version 2025-11-25 is supported. Older or newer versions will be rejected.
+- **Resources Subscribe/Unsubscribe**: Basic resource subscription is not yet implemented (resources/list and resources/read are supported)
 
 For more information on testing EasyMCP with real MCP clients, see [Integration Testing Guide](docs/INTEGRATION_TESTING.md).
 
@@ -301,7 +335,7 @@ import {
   ConfigurationError, 
   ToolExecutionError, 
   ToolNotFoundError
-} from 'easy-mcp-framework';
+} from 'easy-mcp-nest';
 
 // Configuration errors - caught during initialization
 try {
@@ -344,7 +378,7 @@ All error messages are designed to be helpful for debugging:
 
 Example error messages:
 - `"Tool 'getUser': property 'userId' must have a description"`
-- `"Unsupported protocol version: 2024-10-01. Supported version: 2024-11-05"`
+- `"Unsupported protocol version: 2024-10-01. Supported version: 2025-11-25"`
 - `"Missing required parameter: userId"`
 
 ## Troubleshooting
@@ -364,7 +398,7 @@ If tools are registered but not being called:
 If you encounter TypeScript or import errors:
 
 1. **Peer Dependencies**: Ensure all peer dependencies are installed (see Installation section)
-2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-framework'`
+2. **Type Exports**: Verify you're importing from the main package: `import { EasyMCP } from 'easy-mcp-nest'`
 3. **Build Output**: Check that `dist/index.js` and `dist/index.d.ts` exist after building
 4. **Module Resolution**: Ensure your `tsconfig.json` has proper module resolution settings
 
@@ -372,7 +406,7 @@ If you encounter TypeScript or import errors:
 
 If you see "Unsupported protocol version" errors:
 
-1. **Check Client Version**: Ensure your MCP client uses protocol version `2024-11-05`
+1. **Check Client Version**: Ensure your MCP client uses protocol version `2025-11-25`
 2. **Update Client**: Update your MCP client to the latest version
 3. **Debug Mode**: Set `DEBUG=1` to see detailed protocol version information
 
@@ -392,6 +426,8 @@ Enable debug logging to troubleshoot issues:
 
 ```bash
 DEBUG=1 node your-server.js
+# or
+DEBUG=true node your-server.js
 ```
 
 Debug mode provides detailed information about:
@@ -399,6 +435,8 @@ Debug mode provides detailed information about:
 - Tool execution details
 - Protocol version validation
 - Argument validation
+
+**Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
 
 ## Examples
 

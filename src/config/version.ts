@@ -20,7 +20,7 @@ function readPackageJson(): { name: string; version: string } {
     // Add type checks to ensure values are strings before using them
     const name = typeof packageJson.name === "string" 
       ? packageJson.name 
-      : "easy-mcp-framework";
+      : "easy-mcp-nest";
     const version = typeof packageJson.version === "string" 
       ? packageJson.version 
       : "0.0.0";
@@ -37,7 +37,7 @@ function readPackageJson(): { name: string; version: string } {
       error: errorMessage,
     });
     return {
-      name: "easy-mcp-framework",
+      name: "easy-mcp-nest",
       version: "0.0.0",
     };
   }
