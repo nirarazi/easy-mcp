@@ -39,3 +39,5 @@ This is a template skill. In a real implementation, this would:
 
 For now, it returns a placeholder message with the location and units.
 
+
+
