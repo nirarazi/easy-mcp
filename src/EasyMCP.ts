@@ -54,7 +54,6 @@ export class EasyMCP {
         try {
           toolRegistry.registerToolFromConfig(tool);
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedToolName = sanitizeName(tool.name);
           // Log detailed error internally for debugging
           logger.error("EasyMCP", "Failed to register tool", {
@@ -79,7 +78,6 @@ export class EasyMCP {
         try {
           resourceRegistry.registerResourceFromConfig(resource);
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedUri = sanitizeUri(resource.uri);
           // Log detailed error internally for debugging
           logger.error("EasyMCP", "Failed to register resource", {
@@ -104,7 +102,6 @@ export class EasyMCP {
         try {
           promptRegistry.registerPromptFromConfig(prompt);
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
           const sanitizedPromptName = sanitizeName(prompt.name);
           // Log detailed error internally for debugging
           logger.error("EasyMCP", "Failed to register prompt", {
