@@ -56,3 +56,25 @@ export { INTERFACE_LAYER_TOKEN } from './config/constants';
 // Version information
 export { VERSION, PACKAGE_NAME, getVersion, getPackageName } from './config/version';
 
+// Context and decorators
+export type { McpContext } from './core/context/mcp-context.interface';
+export { McpContext as McpContextDecorator, McpService, createFactoryProvider, McpParam } from './decorators';
+
+// Validation
+export { zodToJsonSchema, validateWithZod, safeValidateWithZod } from './validation';
+
+// Express adapter
+export { createMcpExpressRouter } from './adapters/express';
+export type { CreateMcpExpressRouterOptions, McpAuthMiddleware } from './adapters/express';
+
+// OAuth integration
+export { OAuthProviderService, createOAuthMiddleware } from './auth/oauth';
+export type { OAuthProviderConfig, OAuthConfig, OAuthTokenValidator, OAuthContextExtractor } from './auth/oauth';
+
+// Standalone mode
+export { createMcpServer, StandaloneMcpServer } from './standalone';
+export type { CreateMcpServerOptions, StandaloneTransport, StandaloneAuthFunction } from './standalone';
+
+// Testing utilities
+export { createMcpTestApp, McpTestApp, mockMcpContext } from './testing';
+export { createMockJsonRpcRequest, createMockTool, wait, createMockCancellationToken } from './testing';

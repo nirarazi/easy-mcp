@@ -5,7 +5,7 @@
  * This follows the standard JSON Schema format.
  */
 export interface ToolParameter extends Record<string, any> {
-  type?: "string" | "number" | "integer" | "boolean" | "array" | "object";
+  type?: "string" | "number" | "integer" | "boolean" | "array" | "object" | "null";
   description?: string;
   enum?: (string | number | boolean)[];
   default?: any;
@@ -30,14 +30,18 @@ export interface CancellationToken {
   cancel: () => void;
 }
 
+import { McpContext } from "../core/context/mcp-context.interface";
+
 /**
  * Defines a function that the LLM can call.
  * This function takes key/value arguments and returns a result string or object.
  * Optionally accepts a cancellation token for long-running operations.
+ * Optionally accepts context for user information and permissions.
  */
 export type ToolFunction = (
   args: Record<string, any>,
-  cancellationToken?: CancellationToken
+  cancellationToken?: CancellationToken,
+  context?: McpContext
 ) => Promise<any>;
 
 /**

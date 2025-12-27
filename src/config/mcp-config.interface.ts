@@ -2,7 +2,7 @@
  * JSON Schema 2020-12 compatible schema definition
  */
 export interface JsonSchema2020_12 {
-  type: "object" | "string" | "number" | "integer" | "boolean" | "array";
+  type?: "object" | "string" | "number" | "integer" | "boolean" | "array" | "null";
   properties?: Record<string, JsonSchema2020_12>;
   items?: JsonSchema2020_12 | JsonSchema2020_12[];
   required?: string[];

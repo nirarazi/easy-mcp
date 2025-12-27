@@ -55,6 +55,7 @@ export class ToolRegistryService {
    * @param name The name of the tool to execute
    * @param args The arguments to pass to the tool function
    * @param cancellationToken Optional cancellation token for long-running operations
+   * @param context Optional context for user information and permissions
    * @returns The result of the tool execution
    * @throws ToolNotFoundError if the tool is not registered
    * @throws ToolExecutionError if the tool execution fails
@@ -62,7 +63,8 @@ export class ToolRegistryService {
   public async executeTool(
     name: string,
     args: Record<string, any>,
-    cancellationToken?: import("../tool.interface").CancellationToken
+    cancellationToken?: import("../tool.interface").CancellationToken,
+    context?: import("../../core/context/mcp-context.interface").McpContext
   ): Promise<any> {
     const tool = this.getTool(name);
     if (!tool) {
@@ -70,7 +72,7 @@ export class ToolRegistryService {
     }
 
     try {
-      const result = await tool.execute(args, cancellationToken);
+      const result = await tool.execute(args, cancellationToken, context);
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

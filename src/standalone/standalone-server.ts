@@ -1,0 +1,483 @@
+import { CreateMcpServerOptions, StandaloneTransport } from "./types";
+import { StandaloneToolRegistry, StandaloneResourceRegistry, StandalonePromptRegistry } from "./core-services";
+import { JsonRpcRequest, JsonRpcResponse, createJsonRpcSuccess, createJsonRpcError, JsonRpcErrorCode, isValidJsonRpcRequest } from "../interface/jsonrpc.interface";
+import { InitializeParams, InitializeResult, ListToolsResult, McpTool, CallToolParams, CallToolResult, McpErrorCode } from "../interface/mcp-protocol.interface";
+import { McpContext } from "../core/context/mcp-context.interface";
+import { logger } from "../core/utils/logger.util";
+import { sanitizeToolResult, sanitizeName, sanitizeErrorMessage, sanitizeActorId } from "../core/utils/sanitize.util";
+import { ToolNotFoundError } from "../core/errors/easy-mcp-error";
+import * as readline from "readline";
+import * as http from "http";
+
+/**
+ * Standalone MCP server (no NestJS required).
+ */
+export class StandaloneMcpServer {
+  private toolRegistry: StandaloneToolRegistry;
+  private resourceRegistry: StandaloneResourceRegistry;
+  private promptRegistry: StandalonePromptRegistry;
+  private serverInfo: { name: string; version: string };
+  private transport: StandaloneTransport;
+  private auth?: (request: any) => Promise<McpContext> | McpContext | null;
+  private httpServer?: http.Server;
+  private port?: number;
+  private host?: string;
+
+  constructor(options: CreateMcpServerOptions) {
+    this.toolRegistry = new StandaloneToolRegistry();
+    this.resourceRegistry = new StandaloneResourceRegistry();
+    this.promptRegistry = new StandalonePromptRegistry();
+    this.transport = options.transport || "stdio";
+    this.auth = options.auth;
+    this.port = options.port;
+    this.host = options.host;
+
+    this.serverInfo = options.serverInfo || {
+      name: "easy-mcp-standalone",
+      version: "0.2.1",
+    };
+
+    // Register tools
+    for (const tool of options.tools) {
+      this.toolRegistry.registerTool(tool);
+    }
+
+    // Register resources
+    if (options.resources) {
+      for (const resource of options.resources) {
+        this.resourceRegistry.registerResource(resource);
+      }
+    }
+
+    // Register prompts
+    if (options.prompts) {
+      for (const prompt of options.prompts) {
+        this.promptRegistry.registerPrompt(prompt);
+      }
+    }
+  }
+
+  /**
+   * Starts the server based on transport type.
+   */
+  async start(): Promise<void> {
+    if (this.transport === "stdio") {
+      await this.startStdio();
+    } else if (this.transport === "http") {
+      await this.startHttp();
+    } else {
+      throw new Error(`Unsupported transport: ${this.transport}`);
+    }
+  }
+
+  /**
+   * Starts stdio transport.
+   */
+  private async startStdio(): Promise<void> {
+    logger.info("StandaloneMcpServer", "Starting stdio transport", {
+      component: "Standalone",
+    });
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: false,
+    });
+
+    rl.on("line", async (line: string) => {
+      let requestId: string | number | null = null;
+      try {
+        const request = JSON.parse(line);
+        requestId = request?.id ?? null;
+
+        if (isValidJsonRpcRequest(request)) {
+          const response = await this.handleRequest(request);
+          process.stdout.write(JSON.stringify(response) + "\n");
+        } else {
+          // Return error response for invalid JSON-RPC requests
+          const errorResponse = createJsonRpcError(
+            requestId,
+            JsonRpcErrorCode.InvalidRequest,
+            "Invalid JSON-RPC request structure"
+          );
+          process.stdout.write(JSON.stringify(errorResponse) + "\n");
+        }
+      } catch (error) {
+        // Handle JSON parse errors
+        const errorResponse = createJsonRpcError(
+          requestId,
+          JsonRpcErrorCode.ParseError,
+          "Invalid JSON"
+        );
+        process.stdout.write(JSON.stringify(errorResponse) + "\n");
+
+        logger.error("StandaloneMcpServer", "Error processing stdio request", {
+          component: "Standalone",
+          error: sanitizeErrorMessage(error),
+        });
+      }
+    });
+  }
+
+  /**
+   * Starts HTTP transport.
+   */
+  private async startHttp(): Promise<void> {
+    // Security: Warn if HTTP server is exposed without authentication
+    const isExposed = !this.host || this.host === "0.0.0.0" || this.host !== "localhost" && this.host !== "127.0.0.1";
+    if (isExposed && !this.auth) {
+      logger.warn("StandaloneMcpServer", "HTTP server is exposed without authentication", {
+        component: "Standalone",
+        host: this.host || "0.0.0.0",
+        port: this.port,
+        warning: "Unauthenticated tool execution is enabled. This is a security risk in production.",
+        recommendation: "Configure 'auth' option or bind to localhost only.",
+      });
+    }
+
+    logger.info("StandaloneMcpServer", "Starting HTTP transport", {
+      component: "Standalone",
+      host: this.host || "0.0.0.0",
+      port: this.port,
+      hasAuth: !!this.auth,
+    });
+
+    this.httpServer = http.createServer(async (req, res) => {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Method not allowed" }));
+        return;
+      }
+
+      // Prevent unbounded body DoS by limiting request body size
+      const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB limit
+      let body = "";
+      let bodySize = 0;
+
+      req.on("data", (chunk) => {
+        bodySize += chunk.length;
+        if (bodySize > MAX_BODY_SIZE) {
+          req.destroy(); // Stop reading
+          res.writeHead(413, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: JsonRpcErrorCode.InvalidRequest,
+              message: "Request body too large",
+            },
+          }));
+          return;
+        }
+        body += chunk.toString();
+      });
+
+      req.on("error", (error) => {
+        logger.error("StandaloneMcpServer", "Error reading HTTP request", {
+          component: "Standalone",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: JsonRpcErrorCode.InternalError,
+              message: "Internal error",
+            },
+          }));
+        }
+      });
+
+      req.on("end", async () => {
+        // Skip processing if response was already sent (e.g., due to size limit)
+        if (res.headersSent) {
+          return;
+        }
+
+        try {
+          const request = JSON.parse(body);
+          if (isValidJsonRpcRequest(request)) {
+            // Security: Strip any existing metadata from request to prevent spoofing
+            // Only metadata set by auth function should be trusted
+            delete request.metadata;
+
+            // Extract context if auth is provided
+            let context: McpContext | undefined;
+            if (this.auth) {
+              const authContext = await this.auth(req);
+              context = authContext || undefined;
+            }
+
+            // Only add context metadata to request if auth provided it
+            // This prevents unauthenticated callers from spoofing context
+            if (context) {
+              request.metadata = {
+                userId: context.userId,
+                scopes: context.scopes,
+                buildingIds: context.buildingIds,
+                sessionId: context.sessionId,
+              };
+            }
+
+            const response = await this.handleRequest(request);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(response));
+          } else {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: JsonRpcErrorCode.InvalidRequest,
+                message: "Invalid JSON-RPC request",
+              },
+            }));
+          }
+        } catch (error) {
+          logger.error("StandaloneMcpServer", "Error processing HTTP request", {
+            component: "Standalone",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: JsonRpcErrorCode.InternalError,
+              message: "Internal error",
+            },
+          }));
+        }
+      });
+    });
+
+    // Start listening
+    const port = this.port || 3000;
+    const host = this.host || "localhost";
+    this.httpServer.listen(port, host, () => {
+      logger.info("StandaloneMcpServer", `HTTP server listening on ${host}:${port}`, {
+        component: "Standalone",
+      });
+    });
+  }
+
+  /**
+   * Handles a JSON-RPC request.
+   */
+  async handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    switch (request.method) {
+      case "initialize":
+        return this.handleInitialize(request);
+      case "tools/list":
+        return this.handleListTools(request);
+      case "tools/call":
+        return this.handleCallTool(request);
+      default:
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.MethodNotFound,
+          `Method not found: ${request.method}`
+        );
+    }
+  }
+
+  /**
+   * Handles initialize request.
+   */
+  private handleInitialize(request: JsonRpcRequest): JsonRpcResponse {
+    const params = request.params as InitializeParams | undefined;
+
+    if (params && params.protocolVersion !== "2025-11-25") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        `Unsupported protocol version: ${params.protocolVersion}. Supported version: 2025-11-25`
+      );
+    }
+
+    const result: InitializeResult = {
+      protocolVersion: "2025-11-25",
+      capabilities: {
+        tools: {},
+      },
+      serverInfo: this.serverInfo,
+    };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles tools/list request.
+   */
+  private handleListTools(request: JsonRpcRequest): JsonRpcResponse {
+    const tools = this.toolRegistry.getToolSchemasForLLM();
+
+    const mcpTools: McpTool[] = tools.map((tool) => {
+      const toolDef = this.toolRegistry.getTool(tool.function.name);
+      return {
+        name: tool.function.name,
+        description: tool.function.description,
+        inputSchema: tool.function.parameters,
+        ...(toolDef?.icon && { icon: toolDef.icon }),
+      };
+    });
+
+    const result: ListToolsResult = {
+      tools: mcpTools,
+    };
+
+    return createJsonRpcSuccess(request.id, result);
+  }
+
+  /**
+   * Handles tools/call request.
+   */
+  private async handleCallTool(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+    const params = request.params as CallToolParams | undefined;
+
+    if (!params || !params.name || typeof params.name !== "string") {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid tool name"
+      );
+    }
+
+    const args = params.arguments || {};
+    const toolName = params.name;
+
+    // Extract context from request metadata
+    let context: McpContext | undefined;
+    if (request.metadata) {
+      context = {
+        userId: request.metadata.userId,
+        scopes: request.metadata.scopes,
+        buildingIds: request.metadata.buildingIds,
+        sessionId: request.metadata.sessionId,
+      };
+    }
+
+    // Extract actor identifier for audit logging
+    // Sanitize to prevent PII exposure in audit logs
+    const actorId = sanitizeActorId(context?.sessionId || context?.userId || undefined);
+
+    try {
+      const toolResult = await this.toolRegistry.executeTool(toolName, args, undefined, context);
+      const sanitizedResult = sanitizeToolResult(toolResult);
+
+      const result: CallToolResult = {
+        content: [
+          {
+            type: "text",
+            text: sanitizedResult,
+          },
+        ],
+        isError: false,
+      };
+
+      // Audit log: Tool execution completed successfully
+      logger.audit(
+        "StandaloneMcpServer",
+        "tools/call",
+        "success",
+        {
+          toolName: sanitizeName(toolName),
+          resultSize: sanitizedResult.length,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      if (error instanceof ToolNotFoundError) {
+        // Audit log: Tool not found
+        logger.audit(
+          "StandaloneMcpServer",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolNotFoundError",
+            toolName: sanitizeName(toolName),
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          McpErrorCode.ToolNotFound,
+          `Tool not found: ${toolName}`
+        );
+      }
+
+      // Sanitize error message to prevent internal error leakage
+      const sanitizedError = sanitizeErrorMessage(error);
+      logger.error("StandaloneMcpServer", "Tool execution failed", {
+        component: "Standalone",
+        toolName: sanitizeName(toolName),
+        error: sanitizedError,
+      });
+
+      // Audit log: Tool execution failed
+      logger.audit(
+        "StandaloneMcpServer",
+        "tools/call",
+        "failure",
+        {
+          reason: "ToolExecutionError",
+          toolName: sanitizeName(toolName),
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Tool execution failed"
+      );
+    }
+  }
+
+  /**
+   * Stops the server.
+   */
+  async stop(): Promise<void> {
+    if (this.httpServer) {
+      return new Promise((resolve) => {
+        this.httpServer!.close(() => {
+          logger.info("StandaloneMcpServer", "HTTP server stopped", {
+            component: "Standalone",
+          });
+          resolve();
+        });
+      });
+    }
+  }
+}
+
+/**
+ * Creates a standalone MCP server (no NestJS required).
+ *
+ * @example
+ * ```typescript
+ * import { createMcpServer } from 'easy-mcp-nest/standalone';
+ *
+ * const server = createMcpServer({
+ *   tools: [BuildingTools, PaymentTools],
+ *   resources: [BuildingResources],
+ *   transport: 'http',
+ *   auth: validateMcpToken,
+ * });
+ *
+ * await server.start();
+ * ```
+ */
+export function createMcpServer(options: CreateMcpServerOptions): StandaloneMcpServer {
+  return new StandaloneMcpServer(options);
+}

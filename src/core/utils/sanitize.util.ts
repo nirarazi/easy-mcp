@@ -75,7 +75,7 @@ export function sanitizeObject(
 
   for (const [key, value] of Object.entries(obj)) {
     const lowerKey = key.toLowerCase();
-    
+
     // Check if this key should be redacted
     if (lowerSensitiveKeys.some(sensitiveKey => lowerKey.includes(sensitiveKey))) {
       sanitized[key] = '[REDACTED]';
@@ -150,16 +150,16 @@ export function sanitizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     // Remove stack traces and other sensitive details from error messages
     let message = error.message;
-    
+
     // Remove common sensitive patterns
     message = message.replace(/api[_-]?key['":\s]*[=:]\s*[^\s,}]+/gi, 'api[REDACTED]');
     message = message.replace(/token['":\s]*[=:]\s*[^\s,}]+/gi, 'token[REDACTED]');
     message = message.replace(/password['":\s]*[=:]\s*[^\s,}]+/gi, 'password[REDACTED]');
     message = message.replace(/secret['":\s]*[=:]\s*[^\s,}]+/gi, 'secret[REDACTED]');
-    
+
     return message;
   }
-  
+
   return 'An unknown error occurred';
 }
 
@@ -178,12 +178,12 @@ export function sanitizeFilePath(filePath: string): string {
     // Extract just the filename to avoid exposing directory structure
     const pathParts = filePath.split(/[/\\]/);
     const filename = pathParts[pathParts.length - 1];
-    
+
     // If filename is reasonable length, return it
     if (filename && filename.length < 100) {
       return filename;
     }
-    
+
     // Otherwise return a truncated version
     return filename ? `${filename.substring(0, 50)}...` : '[path]';
   } catch {
@@ -206,7 +206,7 @@ export function sanitizeUri(uri: string): string {
   try {
     // Remove control characters and newlines to prevent log injection
     let sanitized = uri.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, '');
-    
+
     // Enforce maximum length to prevent DoS via extremely long strings
     const MAX_LOG_STRING_LENGTH = 200;
     if (sanitized.length > MAX_LOG_STRING_LENGTH) {
@@ -224,7 +224,7 @@ export function sanitizeUri(uri: string): string {
       }
       return `[uri:${Math.abs(hash).toString(36)}]`;
     }
-    
+
     // For shorter URIs without sensitive patterns, return as-is (already sanitized)
     return sanitized;
   } catch {
@@ -247,13 +247,13 @@ export function sanitizeName(name: string): string {
   try {
     // Remove control characters and newlines to prevent log injection
     let sanitized = name.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, '');
-    
+
     // Enforce maximum length to prevent DoS via extremely long strings
     const MAX_LOG_STRING_LENGTH = 200;
     if (sanitized.length > MAX_LOG_STRING_LENGTH) {
       sanitized = sanitized.substring(0, MAX_LOG_STRING_LENGTH);
     }
-    
+
     return sanitized;
   } catch {
     // If name processing fails, return a generic placeholder
@@ -261,3 +261,50 @@ export function sanitizeName(name: string): string {
   }
 }
 
+/**
+ * Sanitizes actor identifiers for audit logging to prevent PII exposure.
+ * Hashes user IDs while preserving session IDs for traceability.
+ * @param actorId The actor identifier (userId, sessionId, etc.)
+ * @returns A sanitized actor identifier safe for audit logs
+ */
+export function sanitizeActorId(actorId: string | undefined): string {
+  if (!actorId || typeof actorId !== 'string') {
+    return 'anonymous';
+  }
+
+  try {
+    // Remove control characters and newlines to prevent log injection
+    let sanitized = actorId.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, '');
+
+    // Enforce maximum length
+    const MAX_LOG_STRING_LENGTH = 200;
+    if (sanitized.length > MAX_LOG_STRING_LENGTH) {
+      sanitized = sanitized.substring(0, MAX_LOG_STRING_LENGTH);
+    }
+
+    // If it looks like a sessionId (UUID-like or session identifier), use as-is
+    // Session IDs are typically less sensitive than user IDs
+    if (/^[a-f0-9-]{20,}$/i.test(sanitized) || sanitized.startsWith('session:') || sanitized.startsWith('sess:')) {
+      return sanitized;
+    }
+
+    // If it looks like a user ID (potentially PII), hash it
+    // This prevents PII exposure while maintaining traceability within a session
+    if (sanitized.startsWith('user:') || /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(sanitized)) {
+      // Simple hash function (not cryptographically secure, just for logging)
+      let hash = 0;
+      for (let i = 0; i < sanitized.length; i++) {
+        const char = sanitized.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return `user:${Math.abs(hash).toString(36)}`;
+    }
+
+    // For other identifiers, use as-is if reasonable length
+    return sanitized;
+  } catch {
+    // If processing fails, return a generic placeholder
+    return 'anonymous';
+  }
+}

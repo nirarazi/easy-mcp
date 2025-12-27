@@ -45,6 +45,7 @@ import { logger } from "../utils/logger.util";
 import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
+import { ContextProviderService } from "../context/context-provider.service";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -62,6 +63,7 @@ export class McpServerService implements OnModuleInit {
     private readonly stdioGatewayService: StdioGatewayService,
     @Inject(CONFIG_TOKEN)
     private readonly configHolder: ConfigHolderService,
+    private readonly contextProvider: ContextProviderService,
   ) {}
 
   private getServerInfo(): { name: string; version: string } {
@@ -76,7 +78,7 @@ export class McpServerService implements OnModuleInit {
   /**
    * Extracts actor identifier from request for audit logging.
    * Uses clientInfo from initialize request if available, otherwise uses stored client identifier.
-   * 
+   *
    * Note: The actor identifier is client-supplied and not authenticated/verified.
    * This is acceptable for local stdio usage where the client process is trusted,
    * but should not be relied upon for security-critical authorization decisions.
@@ -123,7 +125,7 @@ export class McpServerService implements OnModuleInit {
     request: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
     const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
-    
+
     if (isDebugMode) {
       logger.debug("McpServerService", "Received JSON-RPC request", {
         method: request.method,
@@ -329,7 +331,7 @@ export class McpServerService implements OnModuleInit {
     // 2025-11-25: Current/latest version
     const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-06-18", "2025-11-25"];
     const PRIMARY_PROTOCOL_VERSION = "2025-11-25";
-    
+
     if (!SUPPORTED_PROTOCOL_VERSIONS.includes(params.protocolVersion)) {
       // Sanitize untrusted client-supplied data before logging
       const sanitizedClientVersion = sanitizeName(params.protocolVersion);
@@ -349,7 +351,7 @@ export class McpServerService implements OnModuleInit {
         `Unsupported protocol version: ${sanitizedVersion}. Supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}. Please update your client to use protocol version ${PRIMARY_PROTOCOL_VERSION}.`,
       );
     }
-    
+
     // Log if using legacy or intermediate version
     if (params.protocolVersion !== PRIMARY_PROTOCOL_VERSION) {
       // Sanitize untrusted client-supplied data before logging
@@ -367,11 +369,11 @@ export class McpServerService implements OnModuleInit {
     const config = this.configHolder.getConfig();
     const hasResources = config.resources && config.resources.length > 0;
     const hasPrompts = config.prompts && config.prompts.length > 0;
-    
+
     // Respond with the client's requested protocol version.
     // At this point, we've already validated that the client's version is supported.
     const responseProtocolVersion = params.protocolVersion;
-    
+
     const result: InitializeResult = {
       protocolVersion: responseProtocolVersion,
       capabilities: {
@@ -393,7 +395,7 @@ export class McpServerService implements OnModuleInit {
     request: JsonRpcRequest,
   ): JsonRpcResponse {
     const tools = this.toolRegistry.getToolSchemasForLLM();
-    
+
     const mcpTools: McpTool[] = tools.map((tool) => {
       // Get tool definition to access icon
       const toolDef = this.toolRegistry.getTool(tool.function.name);
@@ -416,7 +418,7 @@ export class McpServerService implements OnModuleInit {
    * Handles the tools/call request.
    * Executes the requested tool and returns the result.
    * Includes comprehensive audit logging for security and compliance.
-   * 
+   *
    * Note: This implementation does not perform authorization checks to determine
    * which callers may execute which tools. This is acceptable for local stdio usage
    * where the client process is trusted, but may require additional authorization
@@ -464,7 +466,7 @@ export class McpServerService implements OnModuleInit {
     }
 
     const toolName = params.name;
-    
+
     // Validate that arguments is a plain object (not array, string, etc.)
     if (params.arguments !== undefined && params.arguments !== null) {
       if (
@@ -490,7 +492,7 @@ export class McpServerService implements OnModuleInit {
         );
       }
     }
-    
+
     const args = params.arguments || {};
 
     // Get tool definition for schema validation
@@ -580,9 +582,12 @@ export class McpServerService implements OnModuleInit {
       this.cancellationTokens.set(request.id, cancellationToken);
     }
 
+    // Extract context from request
+    const context = this.contextProvider.extractContext(request);
+
     try {
-      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken);
-      
+      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken, context);
+
       // Check if cancelled during execution
       if (cancellationToken.isCancelled) {
         return createJsonRpcError(
@@ -773,7 +778,7 @@ export class McpServerService implements OnModuleInit {
 
     try {
       const content = await this.resourceRegistry.getResourceContent(params.uri);
-      
+
       // Handle different content formats
       let contents: Array<{
         uri: string;
@@ -785,7 +790,7 @@ export class McpServerService implements OnModuleInit {
       // Check content size to prevent unbounded response DoS
       let contentSize: number;
       let contentData: string;
-      
+
       if (typeof content === "string") {
         contentData = content;
         contentSize = Buffer.byteLength(content, "utf8");
