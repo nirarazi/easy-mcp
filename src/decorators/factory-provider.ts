@@ -19,16 +19,16 @@ export function createFactoryProvider<T>(
   target: new (...args: any[]) => T,
   factory?: (...args: any[]) => T
 ): FactoryProvider<T> {
-  const factories = getServiceFactories(target.prototype || target);
-
   // If no factory provided, create one that resolves factory-injected dependencies
   if (!factory) {
     factory = (...args: any[]) => {
       // Get constructor parameter factories
       const constructorFactories = getServiceFactories(target);
 
-      // Resolve factory dependencies
-      const resolvedArgs = constructorFactories.map(({ factory: factoryFn }) => factoryFn());
+      // Resolve factory dependencies, sorted by parameter index to ensure correct order
+      const resolvedArgs = constructorFactories
+        .sort((a, b) => a.index - b.index)
+        .map(({ factory: factoryFn }) => factoryFn());
 
       // Create instance with resolved dependencies
       return new target(...resolvedArgs);

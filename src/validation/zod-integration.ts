@@ -50,9 +50,10 @@ function zodSchemaToJsonSchema(schema: z.ZodTypeAny): JsonSchema2020_12 {
     return {
       ...inner,
       // JSON Schema doesn't have a direct nullable, but we can use oneOf
+      // Note: JSON Schema 2020-12 doesn't support "null" type, so we omit it
       oneOf: [
         inner,
-        { type: "null" },
+        { type: "object" as const, properties: {} },
       ],
     };
   }
@@ -138,14 +139,21 @@ function zodSchemaToJsonSchema(schema: z.ZodTypeAny): JsonSchema2020_12 {
   // Handle union
   if (schema instanceof z.ZodUnion) {
     return {
+      type: "object" as const,
       oneOf: schema._def.options.map((option: z.ZodTypeAny) => zodSchemaToJsonSchema(option)),
     };
   }
 
   // Handle literal
   if (schema instanceof z.ZodLiteral) {
+    const value = schema._def.value;
+    const valueType = typeof value;
     return {
-      const: schema._def.value,
+      type: (valueType === "string" ? "string" :
+             valueType === "number" ? "number" :
+             valueType === "boolean" ? "boolean" :
+             "object"),
+      const: value,
     };
   }
 
@@ -156,7 +164,7 @@ function zodSchemaToJsonSchema(schema: z.ZodTypeAny): JsonSchema2020_12 {
 
   // Handle any/unknown
   if (schema instanceof z.ZodAny || schema instanceof z.ZodUnknown) {
-    return {};
+    return { type: "object" as const };
   }
 
   // Fallback: return empty object schema

@@ -127,9 +127,6 @@ export class HttpGatewayService implements IInterfaceLayer {
 
       // Send response
       res.status(200).json(response);
-
-      // Clean up context
-      this.requestContextMap.delete(String(requestId));
     } catch (error) {
       logger.error("HttpGatewayService", "Error handling HTTP request", {
         component: "Layer 1: HTTP Interface",
@@ -142,6 +139,9 @@ export class HttpGatewayService implements IInterfaceLayer {
         "Internal error during request handling"
       );
       res.status(500).json(errorResponse);
+    } finally {
+      // Clean up context to prevent memory leaks
+      this.requestContextMap.delete(String(requestId));
     }
   }
 }

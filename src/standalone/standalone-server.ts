@@ -4,7 +4,8 @@ import { JsonRpcRequest, JsonRpcResponse, createJsonRpcSuccess, createJsonRpcErr
 import { InitializeParams, InitializeResult, ListToolsResult, McpTool, CallToolParams, CallToolResult, McpErrorCode } from "../interface/mcp-protocol.interface";
 import { McpContext } from "../core/context/mcp-context.interface";
 import { logger } from "../core/utils/logger.util";
-import { sanitizeToolResult, sanitizeName } from "../core/utils/sanitize.util";
+import { sanitizeToolResult, sanitizeName, sanitizeErrorMessage } from "../core/utils/sanitize.util";
+import { ToolNotFoundError } from "../core/errors/easy-mcp-error";
 import * as readline from "readline";
 import * as http from "http";
 
@@ -114,12 +115,53 @@ export class StandaloneMcpServer {
         return;
       }
 
+      // Prevent unbounded body DoS by limiting request body size
+      const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB limit
       let body = "";
+      let bodySize = 0;
+
       req.on("data", (chunk) => {
+        bodySize += chunk.length;
+        if (bodySize > MAX_BODY_SIZE) {
+          req.destroy(); // Stop reading
+          res.writeHead(413, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: JsonRpcErrorCode.InvalidRequest,
+              message: "Request body too large",
+            },
+          }));
+          return;
+        }
         body += chunk.toString();
       });
 
+      req.on("error", (error) => {
+        logger.error("StandaloneMcpServer", "Error reading HTTP request", {
+          component: "Standalone",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: JsonRpcErrorCode.InternalError,
+              message: "Internal error",
+            },
+          }));
+        }
+      });
+
       req.on("end", async () => {
+        // Skip processing if response was already sent (e.g., due to size limit)
+        if (res.headersSent) {
+          return;
+        }
+
         try {
           const request = JSON.parse(body);
           if (isValidJsonRpcRequest(request)) {
@@ -302,11 +344,17 @@ export class StandaloneMcpServer {
         );
       }
 
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Sanitize error message to prevent internal error leakage
+      const sanitizedError = sanitizeErrorMessage(error);
+      logger.error("StandaloneMcpServer", "Tool execution failed", {
+        component: "Standalone",
+        toolName,
+        error: sanitizedError,
+      });
       return createJsonRpcError(
         request.id,
         McpErrorCode.ToolExecutionError,
-        `Tool execution failed: ${errorMessage}`
+        "Tool execution failed"
       );
     }
   }

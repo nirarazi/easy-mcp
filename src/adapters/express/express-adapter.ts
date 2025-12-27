@@ -46,9 +46,14 @@ export function createMcpExpressRouter(
     if (tool && typeof tool === "object" && "name" in tool && "function" in tool) {
       return tool as ToolRegistrationInput;
     }
-    // Otherwise, assume it's a class and needs to be converted
-    // For now, we'll require ToolRegistrationInput format
-    throw new Error("Tools must be in ToolRegistrationInput format. Use the config-based approach.");
+    // If it's a class constructor, it should be registered as a NestJS provider
+    // For now, we require ToolRegistrationInput format for the express adapter
+    // Class-based tools should be registered via NestJS modules
+    if (typeof tool === "function") {
+      throw new Error("Class-based tools are not directly supported in createMcpExpressRouter. Please convert them to ToolRegistrationInput format or register them via NestJS modules.");
+    }
+    // Otherwise, it's an invalid format
+    throw new Error("Tools must be in ToolRegistrationInput format or a class constructor. Use the config-based or decorator-based approach.");
   });
 
   // Initialize EasyMCP with provided configuration
@@ -72,7 +77,9 @@ export function createMcpExpressRouter(
 
     // Create HttpGatewayService and inject McpServerService
     httpGateway = new HttpGatewayService();
-    httpGateway.setMcpServerService(mcpServerService);
+    if (mcpServerService) {
+      httpGateway.setMcpServerService(mcpServerService);
+    }
   })();
 
   // Middleware to ensure initialization
@@ -95,17 +102,14 @@ export function createMcpExpressRouter(
     }
   });
 
-  // OAuth configuration (if provided)
-  let oauthProvider: OAuthProviderService | null = null;
-  if (options.oauth) {
-    oauthProvider = new OAuthProviderService();
-    oauthProvider.setConfig(options.oauth);
-    router.use(createOAuthMiddleware(oauthProvider));
-  }
-
   // Auth middleware (if provided, takes precedence over OAuth)
   if (options.auth) {
     router.use(options.auth);
+  } else if (options.oauth) {
+    // OAuth configuration (only if auth middleware is not provided)
+    const oauthProvider = new OAuthProviderService();
+    oauthProvider.setConfig(options.oauth);
+    router.use(createOAuthMiddleware(oauthProvider));
   }
 
   // Extract context from request (helper function)

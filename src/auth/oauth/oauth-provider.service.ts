@@ -41,7 +41,7 @@ export class OAuthProviderService {
 
       logger.debug("OAuthProviderService", "Token validated and context extracted", {
         component: "OAuth",
-        userId: context.userId,
+        // Do not log userId (PII) in production logs
       });
 
       return context;
@@ -67,17 +67,19 @@ export class OAuthProviderService {
       return this.config.extractToken(req);
     }
 
-    // Default: extract from Authorization header
-    const authHeader = req.headers?.authorization || req.headers?.Authorization;
+    // Default: extract from Authorization header using req.get() to handle header variations
+    const authHeader = req.get?.("Authorization") || req.headers?.authorization || req.headers?.Authorization;
     if (!authHeader) {
       return null;
     }
 
-    // Support "Bearer <token>" format
-    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-      return authHeader.substring(7);
+    // Support "Bearer <token>" format - ensure it's properly formatted
+    const parts = String(authHeader).split(" ");
+    if (parts.length === 2 && parts[0] === "Bearer") {
+      return parts[1];
     }
 
-    return authHeader;
+    // If not Bearer format, return null for security
+    return null;
   }
 }

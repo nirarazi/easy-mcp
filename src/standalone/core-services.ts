@@ -19,11 +19,21 @@ export class StandaloneToolRegistry {
       throw new Error(`Tool name '${toolInput.name}' already registered.`);
     }
 
+    // Ensure inputSchema is an object type schema (required by ToolDefinition)
+    if (toolInput.inputSchema.type !== "object") {
+      throw new Error(`Tool '${toolInput.name}': inputSchema.type must be "object" for tool definitions`);
+    }
+
     const toolDefinition: ToolDefinition = {
       name: toolInput.name,
       description: toolInput.description,
       execute: toolInput.function,
-      inputSchema: toolInput.inputSchema,
+      inputSchema: toolInput.inputSchema as {
+        type: "object";
+        properties?: Record<string, any>;
+        required?: string[];
+        [key: string]: any;
+      },
       icon: toolInput.icon,
     };
 
