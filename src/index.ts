@@ -75,3 +75,7 @@ export type { OAuthProviderConfig, OAuthConfig, OAuthTokenValidator, OAuthContex
 export { createMcpServer, StandaloneMcpServer } from './standalone';
 export type { CreateMcpServerOptions, StandaloneTransport, StandaloneAuthFunction } from './standalone';
 
+// Testing utilities
+export { createMcpTestApp, McpTestApp, mockMcpContext } from './testing';
+export { createMockJsonRpcRequest, createMockTool, wait, createMockCancellationToken } from './testing';
+
