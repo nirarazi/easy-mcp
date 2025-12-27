@@ -56,3 +56,7 @@ export { INTERFACE_LAYER_TOKEN } from './config/constants';
 // Version information
 export { VERSION, PACKAGE_NAME, getVersion, getPackageName } from './config/version';
 
+// Context and decorators
+export type { McpContext } from './core/context/mcp-context.interface';
+export { McpContext as McpContextDecorator } from './decorators';
+

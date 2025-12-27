@@ -45,6 +45,7 @@ import { logger } from "../utils/logger.util";
 import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
+import { ContextProviderService } from "../context/context-provider.service";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -62,6 +63,7 @@ export class McpServerService implements OnModuleInit {
     private readonly stdioGatewayService: StdioGatewayService,
     @Inject(CONFIG_TOKEN)
     private readonly configHolder: ConfigHolderService,
+    private readonly contextProvider: ContextProviderService,
   ) {}
 
   private getServerInfo(): { name: string; version: string } {
@@ -580,8 +582,11 @@ export class McpServerService implements OnModuleInit {
       this.cancellationTokens.set(request.id, cancellationToken);
     }
 
+    // Extract context from request
+    const context = this.contextProvider.extractContext(request);
+
     try {
-      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken);
+      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken, context);
       
       // Check if cancelled during execution
       if (cancellationToken.isCancelled) {

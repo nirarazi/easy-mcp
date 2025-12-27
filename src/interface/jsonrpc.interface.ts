@@ -6,6 +6,15 @@ export interface JsonRpcRequest {
   id: string | number | null;
   method: string;
   params?: any;
+  /** Optional metadata for context extraction (userId, scopes, etc.) */
+  metadata?: {
+    userId?: string;
+    scopes?: string[];
+    buildingIds?: string[];
+    sessionId?: string;
+    metadata?: Record<string, any>;
+    [key: string]: any;
+  };
 }
 
 /**
