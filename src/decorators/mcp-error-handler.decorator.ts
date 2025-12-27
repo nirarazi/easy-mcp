@@ -31,4 +31,3 @@ export function McpErrorHandler(handler: ErrorHandler): ClassDecorator {
 export function getErrorHandler(target: any): ErrorHandler | undefined {
   return Reflect.getMetadata(MCP_ERROR_HANDLER_METADATA_KEY, target);
 }
-

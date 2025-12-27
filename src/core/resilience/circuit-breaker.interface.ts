@@ -28,4 +28,3 @@ export interface CircuitBreakerState {
   lastSuccessTime?: number;
   nextAttemptTime?: number;
 }
-

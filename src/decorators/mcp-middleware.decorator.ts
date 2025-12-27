@@ -36,4 +36,3 @@ export function McpMiddleware(middleware: Middleware): ClassDecorator {
 export function getMiddlewares(target: any): Middleware[] {
   return Reflect.getMetadata(MCP_MIDDLEWARE_METADATA_KEY, target) || [];
 }
-

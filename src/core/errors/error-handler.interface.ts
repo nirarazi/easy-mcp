@@ -22,4 +22,3 @@ export interface ErrorHandlerConfig {
   /** Whether to log errors automatically */
   logErrors?: boolean;
 }
-

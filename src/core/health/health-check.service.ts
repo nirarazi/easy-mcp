@@ -80,4 +80,3 @@ export class HealthCheckService {
     return { alive: true };
   }
 }
-

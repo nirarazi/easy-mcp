@@ -132,4 +132,3 @@ export function getToolMethods(target: any): ToolMethodMetadata[] {
 export function isToolMethod(target: any, propertyKey: string | symbol): boolean {
   return Reflect.hasMetadata(MCP_TOOL_METADATA_KEY, target, propertyKey);
 }
-

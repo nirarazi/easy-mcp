@@ -17,4 +17,3 @@ export interface MiddlewareConfig {
   /** Middleware functions to execute */
   middlewares: Middleware[];
 }
-

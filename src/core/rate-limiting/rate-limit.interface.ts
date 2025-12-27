@@ -16,4 +16,3 @@ export interface RateLimitResult {
   remaining: number;
   resetTime: number;
 }
-
