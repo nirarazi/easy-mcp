@@ -25,7 +25,7 @@ export type {
   InitializeParams,
   InitializeResult,
   ListToolsResult,
-  McpTool,
+  McpTool as McpToolDefinition,
   CallToolParams,
   CallToolResult,
 } from './interface/mcp-protocol.interface';

@@ -48,6 +48,14 @@ export class BatchExecutorService {
 
     // Execute all tools in parallel
     const promises = requests.map(async (request, index) => {
+      // Check for cancellation before starting each tool
+      if (cancellationToken?.isCancelled) {
+        return {
+          tool: request.tool,
+          success: false,
+          error: "Batch cancelled",
+        } as BatchToolResult;
+      }
       try {
         const result = await this.toolRegistry.executeTool(
           request.tool,

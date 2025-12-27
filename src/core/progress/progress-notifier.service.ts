@@ -1,8 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Inject, Optional } from "@nestjs/common";
 import { ProgressNotification } from "../../interface/mcp-protocol.interface";
-import { IInterfaceLayer } from "../../interface/interface.interface";
+import type { IInterfaceLayer } from "../../interface/interface.interface";
 import { INTERFACE_LAYER_TOKEN } from "../../config/constants";
-import { Inject, Optional } from "@nestjs/common";
 import { logger } from "../utils/logger.util";
 
 /**

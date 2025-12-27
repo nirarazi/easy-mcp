@@ -634,7 +634,7 @@ export class McpServerService implements OnModuleInit {
 
     // Check rate limit
     if (tool.rateLimit && this.rateLimiter) {
-      const identifier = context?.userId || context?.sessionId || "anonymous";
+      const identifier = context?.userId || context?.sessionId || context?.metadata?.ip || "anonymous";
       const rateLimitResult = this.rateLimiter.checkRateLimit(toolName, identifier, tool.rateLimit);
       if (!rateLimitResult.allowed) {
         logger.audit(
@@ -837,6 +837,10 @@ export class McpServerService implements OnModuleInit {
         cancellationToken.isCancelled = true;
       },
     };
+    // Register cancellation token for batch requests
+    if (request.id != null) {
+      this.cancellationTokens.set(request.id, cancellationToken);
+    }
 
     // Create progress callback
     const progressCallback = this.progressNotifier?.createProgressCallback(request.id);

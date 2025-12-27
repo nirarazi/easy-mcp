@@ -29,7 +29,7 @@ export class OpenApiGeneratorService {
 
     // Generate paths for each tool
     for (const tool of tools) {
-      const path = `/tools/${tool.function.name}`;
+      const path = `/tools/${encodeURIComponent(tool.function.name)}`;
       spec.paths[path] = {
         post: {
           summary: tool.function.description,
@@ -85,20 +85,26 @@ export class OpenApiGeneratorService {
   generateMarkdownDocs(info: { title: string; version: string }): string {
     const tools = this.toolRegistry.getToolSchemasForLLM();
 
-    let markdown = `# ${info.title} API Documentation\n\n`;
-    markdown += `Version: ${info.version}\n\n`;
+    // Helper function to escape markdown special characters
+    const escapeMarkdown = (text: string): string => {
+      if (!text) return "";
+      return text.replace(/([\\`*_{}[\]()#+-.!])/g, "\\$1");
+    };
+
+    let markdown = `# ${escapeMarkdown(info.title)} API Documentation\n\n`;
+    markdown += `Version: ${escapeMarkdown(info.version)}\n\n`;
     markdown += `## Tools\n\n`;
 
     for (const tool of tools) {
-      markdown += `### ${tool.function.name}\n\n`;
-      markdown += `${tool.function.description}\n\n`;
+      markdown += `### ${escapeMarkdown(tool.function.name)}\n\n`;
+      markdown += `${escapeMarkdown(tool.function.description)}\n\n`;
 
       if (tool.function.parameters.properties) {
         markdown += `#### Parameters\n\n`;
         for (const [paramName, paramDef] of Object.entries(tool.function.parameters.properties)) {
-          markdown += `- **${paramName}** (${paramDef.type || "any"})`;
+          markdown += `- **${escapeMarkdown(paramName)}** (${escapeMarkdown(String(paramDef.type || "any"))})`;
           if (paramDef.description) {
-            markdown += `: ${paramDef.description}`;
+            markdown += `: ${escapeMarkdown(paramDef.description)}`;
           }
           markdown += `\n`;
         }

@@ -1,6 +1,11 @@
 import { RateLimitConfig } from "../../decorators/mcp-tool.decorator";
 
 /**
+ * Re-export RateLimitConfig for use in rate limiting services
+ */
+export type { RateLimitConfig };
+
+/**
  * Rate limit entry tracking
  */
 export interface RateLimitEntry {
