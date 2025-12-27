@@ -22,7 +22,7 @@ export class McpTestApp {
 
   /**
    * Calls a tool by name with parameters and optional context.
-   * 
+   *
    * @example
    * ```typescript
    * const app = await createMcpTestApp([myTool]);
@@ -62,11 +62,11 @@ export class McpTestApp {
 
 /**
  * Creates a test MCP application for testing tools.
- * 
+ *
  * @example
  * ```typescript
  * import { createMcpTestApp, mockMcpContext } from 'easy-mcp-nest/testing';
- * 
+ *
  * const app = await createMcpTestApp([BuildingTools]);
  * const context = mockMcpContext({ userId: '123', scopes: [...] });
  * const result = await app.callTool('create_building', params, context);
@@ -87,4 +87,3 @@ export async function createMcpTestApp(
 
   return new McpTestApp(app);
 }
-

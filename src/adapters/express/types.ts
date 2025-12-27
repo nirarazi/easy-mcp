@@ -18,26 +18,25 @@ export type McpAuthMiddleware = (
 export interface CreateMcpExpressRouterOptions {
   /** Array of tool classes or tool registration inputs */
   tools?: any[];
-  
+
   /** Array of resource registration inputs */
   resources?: any[];
-  
+
   /** Array of prompt registration inputs */
   prompts?: any[];
-  
+
   /** Optional authentication middleware */
   auth?: McpAuthMiddleware;
-  
+
   /** Optional OAuth configuration (alternative to auth middleware) */
   oauth?: OAuthProviderConfig;
-  
+
   /** Optional server info */
   serverInfo?: {
     name: string;
     version: string;
   };
-  
+
   /** Path prefix for MCP endpoints (default: '/mcp') */
   pathPrefix?: string;
 }
-

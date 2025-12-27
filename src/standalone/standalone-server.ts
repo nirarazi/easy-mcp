@@ -30,7 +30,7 @@ export class StandaloneMcpServer {
     this.auth = options.auth;
     this.port = options.port;
     this.host = options.host;
-    
+
     this.serverInfo = options.serverInfo || {
       name: "easy-mcp-standalone",
       version: "0.2.1",
@@ -207,7 +207,7 @@ export class StandaloneMcpServer {
    */
   private handleInitialize(request: JsonRpcRequest): JsonRpcResponse {
     const params = request.params as InitializeParams | undefined;
-    
+
     if (params && params.protocolVersion !== "2025-11-25") {
       return createJsonRpcError(
         request.id,
@@ -232,7 +232,7 @@ export class StandaloneMcpServer {
    */
   private handleListTools(request: JsonRpcRequest): JsonRpcResponse {
     const tools = this.toolRegistry.getToolSchemasForLLM();
-    
+
     const mcpTools: McpTool[] = tools.map((tool) => {
       const toolDef = this.toolRegistry.getTool(tool.function.name);
       return {
@@ -330,22 +330,21 @@ export class StandaloneMcpServer {
 
 /**
  * Creates a standalone MCP server (no NestJS required).
- * 
+ *
  * @example
  * ```typescript
  * import { createMcpServer } from 'easy-mcp-nest/standalone';
- * 
+ *
  * const server = createMcpServer({
  *   tools: [BuildingTools, PaymentTools],
  *   resources: [BuildingResources],
  *   transport: 'http',
  *   auth: validateMcpToken,
  * });
- * 
+ *
  * await server.start();
  * ```
  */
 export function createMcpServer(options: CreateMcpServerOptions): StandaloneMcpServer {
   return new StandaloneMcpServer(options);
 }
-

@@ -11,7 +11,7 @@ const MCP_PARAM_INDEX_METADATA_KEY = Symbol("mcp:param:index");
 /**
  * Decorator to specify a Zod schema for a tool method parameter.
  * This enables TypeScript-first validation with full type safety.
- * 
+ *
  * @example
  * ```typescript
  * const CreateBuildingSchema = z.object({
@@ -19,7 +19,7 @@ const MCP_PARAM_INDEX_METADATA_KEY = Symbol("mcp:param:index");
  *   address: z.string(),
  *   floors: z.number().int().min(1).max(100),
  * });
- * 
+ *
  * @McpTool({ name: 'create_building' })
  * async createBuilding(
  *   @McpParam(CreateBuildingSchema) params: z.infer<typeof CreateBuildingSchema>
@@ -38,14 +38,14 @@ export function McpParam<T extends z.ZodTypeAny>(schema: T): ParameterDecorator 
     // Store the schema for this parameter
     const existingSchemas: Map<number, z.ZodTypeAny> =
       Reflect.getMetadata(MCP_PARAM_SCHEMA_METADATA_KEY, target, propertyKey) || new Map();
-    
+
     existingSchemas.set(parameterIndex, schema);
     Reflect.defineMetadata(MCP_PARAM_SCHEMA_METADATA_KEY, existingSchemas, target, propertyKey);
 
     // Store parameter indices that have schemas
     const existingIndices: number[] =
       Reflect.getMetadata(MCP_PARAM_INDEX_METADATA_KEY, target, propertyKey) || [];
-    
+
     if (!existingIndices.includes(parameterIndex)) {
       existingIndices.push(parameterIndex);
       Reflect.defineMetadata(MCP_PARAM_INDEX_METADATA_KEY, existingIndices, target, propertyKey);
@@ -87,11 +87,11 @@ export function getParamSchemasAsJsonSchema(
   propertyKey: string | symbol
 ): { type: "object"; properties?: Record<string, any>; required?: string[] } | null {
   const schemas = getAllParamSchemas(target, propertyKey);
-  
+
   // For MCP tools, we expect a single parameter object
   // The first parameter (index 0) should be the params object
   const paramsSchema = schemas.get(0);
-  
+
   if (!paramsSchema) {
     return null;
   }
@@ -99,4 +99,3 @@ export function getParamSchemasAsJsonSchema(
   // Convert Zod schema to JSON Schema
   return zodToJsonSchema(paramsSchema) as { type: "object"; properties?: Record<string, any>; required?: string[] };
 }
-

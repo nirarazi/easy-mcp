@@ -7,7 +7,7 @@ const MCP_CONTEXT_METADATA_KEY = Symbol("mcp:context");
 
 /**
  * Decorator to inject MCP context into a tool method parameter.
- * 
+ *
  * @example
  * ```typescript
  * @McpTool({ name: 'create_building' })
@@ -28,7 +28,7 @@ export function McpContext(): ParameterDecorator {
     // Store the parameter index that should receive context
     const existingContextParams: number[] =
       Reflect.getMetadata(MCP_CONTEXT_METADATA_KEY, target, propertyKey) || [];
-    
+
     existingContextParams.push(parameterIndex);
     Reflect.defineMetadata(MCP_CONTEXT_METADATA_KEY, existingContextParams, target, propertyKey);
   };
@@ -44,4 +44,3 @@ export function getContextParameterIndices(
 ): number[] {
   return Reflect.getMetadata(MCP_CONTEXT_METADATA_KEY, target, propertyKey) || [];
 }
-

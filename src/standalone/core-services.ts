@@ -160,4 +160,3 @@ export class StandalonePromptRegistry {
     return Array.from(this.registry.values());
   }
 }
-

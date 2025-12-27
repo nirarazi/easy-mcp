@@ -75,7 +75,7 @@ export class HttpGatewayService implements IInterfaceLayer {
     try {
       // Parse JSON-RPC request from request body
       const body = req.body;
-      
+
       if (!body || typeof body !== "object") {
         const errorResponse = createJsonRpcError(
           null,
@@ -124,7 +124,7 @@ export class HttpGatewayService implements IInterfaceLayer {
       }
 
       const response = await this.mcpServerService.handleRequest(request);
-      
+
       // Send response
       res.status(200).json(response);
 
@@ -145,4 +145,3 @@ export class HttpGatewayService implements IInterfaceLayer {
     }
   }
 }
-

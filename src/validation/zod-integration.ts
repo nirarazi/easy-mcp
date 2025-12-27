@@ -15,9 +15,9 @@ export function zodToJsonSchema(schema: z.ZodTypeAny): JsonSchema2020_12 {
     for (const [key, value] of Object.entries(shape)) {
       const zodSchema = value as z.ZodTypeAny;
       properties[key] = zodSchemaToJsonSchema(zodSchema);
-      
+
       // Check if field is required (not optional, not nullable, not default)
-      if (!(zodSchema instanceof z.ZodOptional) && 
+      if (!(zodSchema instanceof z.ZodOptional) &&
           !(zodSchema instanceof z.ZodDefault) &&
           !(zodSchema instanceof z.ZodNullable)) {
         required.push(key);
@@ -185,4 +185,3 @@ export function safeValidateWithZod<T>(
   }
   return { success: false, error: result.error };
 }
-

@@ -18,13 +18,13 @@ export type OAuthContextExtractor = (payload: any) => McpContext;
 export interface OAuthProviderConfig {
   /** Provider name (e.g., 'custom', 'google', 'auth0') */
   provider: string;
-  
+
   /** Function to validate OAuth token */
   validateToken: OAuthTokenValidator;
-  
+
   /** Function to extract context from token payload */
   extractContext: OAuthContextExtractor;
-  
+
   /** Optional token extraction function (default: extracts from Authorization header) */
   extractToken?: (req: any) => string | null;
 }
@@ -36,4 +36,3 @@ export interface OAuthConfig {
   /** OAuth provider configuration */
   oauth: OAuthProviderConfig;
 }
-

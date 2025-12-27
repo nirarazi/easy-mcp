@@ -35,10 +35,10 @@ export class OAuthProviderService {
     try {
       // Validate token
       const payload = await this.config.validateToken(token);
-      
+
       // Extract context from payload
       const context = this.config.extractContext(payload);
-      
+
       logger.debug("OAuthProviderService", "Token validated and context extracted", {
         component: "OAuth",
         userId: context.userId,
@@ -81,4 +81,3 @@ export class OAuthProviderService {
     return authHeader;
   }
 }
-

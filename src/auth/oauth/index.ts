@@ -6,4 +6,3 @@ export type {
   OAuthTokenValidator,
   OAuthContextExtractor,
 } from "./oauth-config.interface";
-

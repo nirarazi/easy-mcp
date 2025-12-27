@@ -7,18 +7,18 @@ const MCP_SERVICE_FACTORY_METADATA_KEY = Symbol("mcp:service:factory");
 
 /**
  * Decorator to inject a service using a factory function instead of DI container.
- * 
+ *
  * @example
  * ```typescript
  * @McpTool({ name: 'create_building' })
  * export class BuildingTools {
  *   constructor(
- *     @McpService(() => getBuildingService()) 
+ *     @McpService(() => getBuildingService())
  *     private buildingService: BuildingService
  *   ) {}
  * }
  * ```
- * 
+ *
  * @param factory Function that returns the service instance
  */
 export function McpService<T = any>(factory: () => T): ParameterDecorator {
@@ -27,14 +27,14 @@ export function McpService<T = any>(factory: () => T): ParameterDecorator {
       // For method parameters, store on the method
       const existingFactories: Array<{ index: number; factory: () => any }> =
         Reflect.getMetadata(MCP_SERVICE_FACTORY_METADATA_KEY, target, propertyKey) || [];
-      
+
       existingFactories.push({ index: parameterIndex, factory });
       Reflect.defineMetadata(MCP_SERVICE_FACTORY_METADATA_KEY, existingFactories, target, propertyKey);
     } else {
       // For constructor parameters, store on the constructor
       const existingFactories: Array<{ index: number; factory: () => any }> =
         Reflect.getMetadata(MCP_SERVICE_FACTORY_METADATA_KEY, target) || [];
-      
+
       existingFactories.push({ index: parameterIndex, factory });
       Reflect.defineMetadata(MCP_SERVICE_FACTORY_METADATA_KEY, existingFactories, target);
     }
@@ -54,4 +54,3 @@ export function getServiceFactories(
   }
   return Reflect.getMetadata(MCP_SERVICE_FACTORY_METADATA_KEY, target) || [];
 }
-

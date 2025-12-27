@@ -17,26 +17,25 @@ export type StandaloneAuthFunction = (request: any) => Promise<McpContext> | Mcp
 export interface CreateMcpServerOptions {
   /** Array of tool registration inputs */
   tools: ToolRegistrationInput[];
-  
+
   /** Array of resource registration inputs */
   resources?: ResourceRegistrationInput[];
-  
+
   /** Array of prompt registration inputs */
   prompts?: PromptRegistrationInput[];
-  
+
   /** Server information */
   serverInfo?: ServerInfo;
-  
+
   /** Transport type (default: 'stdio') */
   transport?: StandaloneTransport;
-  
+
   /** Optional authentication function */
   auth?: StandaloneAuthFunction;
-  
+
   /** HTTP port (only used when transport is 'http') */
   port?: number;
-  
+
   /** HTTP host (only used when transport is 'http', default: 'localhost') */
   host?: string;
 }
-

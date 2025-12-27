@@ -2,7 +2,7 @@ import { McpContext } from "../core/context/mcp-context.interface";
 
 /**
  * Creates a mock MCP context for testing.
- * 
+ *
  * @example
  * ```typescript
  * const context = mockMcpContext({
@@ -25,4 +25,3 @@ export function mockMcpContext(overrides?: Partial<McpContext>): McpContext {
     ...overrides,
   };
 }
-

@@ -15,21 +15,21 @@ import { createOAuthMiddleware } from "../../auth/oauth/oauth-middleware";
 
 /**
  * Creates an Express router for MCP protocol over HTTP.
- * 
+ *
  * @example
  * ```typescript
  * import express from 'express';
  * import { createMcpExpressRouter } from 'easy-mcp-nest/adapters/express';
- * 
+ *
  * const app = express();
  * app.use(express.json());
- * 
+ *
  * const mcpRouter = createMcpExpressRouter({
  *   tools: [BuildingTools, PaymentTools],
  *   resources: [BuildingResources],
  *   auth: mcpAuthMiddleware,
  * });
- * 
+ *
  * app.use('/mcp', mcpRouter);
  * app.listen(3000);
  * ```
@@ -66,10 +66,10 @@ export function createMcpExpressRouter(
   const initPromise = (async () => {
     await EasyMCP.initialize(config);
     const appContext = (EasyMCP as any).app as INestApplicationContext;
-    
+
     // Get McpServerService
     mcpServerService = appContext.get(McpServerService);
-    
+
     // Create HttpGatewayService and inject McpServerService
     httpGateway = new HttpGatewayService();
     httpGateway.setMcpServerService(mcpServerService);
@@ -123,7 +123,7 @@ export function createMcpExpressRouter(
     }
     if (req.headers["x-scopes"]) {
       const scopes = req.headers["x-scopes"];
-      context.scopes = Array.isArray(scopes) 
+      context.scopes = Array.isArray(scopes)
         ? scopes.map(String)
         : String(scopes).split(",").map(s => s.trim());
     }
@@ -166,4 +166,3 @@ export function createMcpExpressRouter(
 
   return router;
 }
-
