@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { McpContext } from "../../core/context/mcp-context.interface";
+import { OAuthProviderConfig } from "../../auth/oauth/oauth-config.interface";
 
 /**
  * Express middleware for extracting context from requests.
@@ -26,6 +27,9 @@ export interface CreateMcpExpressRouterOptions {
   
   /** Optional authentication middleware */
   auth?: McpAuthMiddleware;
+  
+  /** Optional OAuth configuration (alternative to auth middleware) */
+  oauth?: OAuthProviderConfig;
   
   /** Optional server info */
   serverInfo?: {

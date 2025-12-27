@@ -10,6 +10,8 @@ import { CreateMcpExpressRouterOptions } from "./types";
 import { McpContext } from "../../core/context/mcp-context.interface";
 import { logger } from "../../core/utils/logger.util";
 import { McpServerService } from "../../core/mcp-server/mcp-server.service";
+import { OAuthProviderService } from "../../auth/oauth/oauth-provider.service";
+import { createOAuthMiddleware } from "../../auth/oauth/oauth-middleware";
 
 /**
  * Creates an Express router for MCP protocol over HTTP.
@@ -93,7 +95,15 @@ export function createMcpExpressRouter(
     }
   });
 
-  // Auth middleware (if provided)
+  // OAuth configuration (if provided)
+  let oauthProvider: OAuthProviderService | null = null;
+  if (options.oauth) {
+    oauthProvider = new OAuthProviderService();
+    oauthProvider.setConfig(options.oauth);
+    router.use(createOAuthMiddleware(oauthProvider));
+  }
+
+  // Auth middleware (if provided, takes precedence over OAuth)
   if (options.auth) {
     router.use(options.auth);
   }

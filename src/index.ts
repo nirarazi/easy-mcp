@@ -64,3 +64,7 @@ export { McpContext as McpContextDecorator, McpService, createFactoryProvider } 
 export { createMcpExpressRouter } from './adapters/express';
 export type { CreateMcpExpressRouterOptions, McpAuthMiddleware } from './adapters/express';
 
+// OAuth integration
+export { OAuthProviderService, createOAuthMiddleware } from './auth/oauth';
+export type { OAuthProviderConfig, OAuthConfig, OAuthTokenValidator, OAuthContextExtractor } from './auth/oauth';
+
