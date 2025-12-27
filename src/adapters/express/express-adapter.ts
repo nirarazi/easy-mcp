@@ -130,7 +130,9 @@ export function createMcpExpressRouter(
     }
 
     // Only extract from headers if NO auth middleware is configured
-    // This is for development/testing scenarios only
+    // SECURITY WARNING: This is for development/testing scenarios only
+    // Headers are not authenticated and can be spoofed by clients
+    // Do NOT use this in production without proper authentication middleware
     const context: Partial<McpContext> = {};
     if (req.headers["x-user-id"]) {
       context.userId = String(req.headers["x-user-id"]);
@@ -148,7 +150,16 @@ export function createMcpExpressRouter(
         : String(buildingIds).split(",").map(s => s.trim());
     }
 
-    return Object.keys(context).length > 0 ? (context as McpContext) : undefined;
+    if (Object.keys(context).length > 0) {
+      // Log warning when using unauthenticated headers (dev mode only)
+      logger.warn("ExpressAdapter", "Using unauthenticated headers for context extraction", {
+        component: "ExpressAdapter",
+        warning: "Headers are not authenticated and can be spoofed. Use auth middleware in production.",
+      });
+      return context as McpContext;
+    }
+
+    return undefined;
   };
 
   // Main JSON-RPC endpoint

@@ -85,16 +85,35 @@ export class StandaloneMcpServer {
     });
 
     rl.on("line", async (line: string) => {
+      let requestId: string | number | null = null;
       try {
         const request = JSON.parse(line);
+        requestId = request?.id ?? null;
+
         if (isValidJsonRpcRequest(request)) {
           const response = await this.handleRequest(request);
           process.stdout.write(JSON.stringify(response) + "\n");
+        } else {
+          // Return error response for invalid JSON-RPC requests
+          const errorResponse = createJsonRpcError(
+            requestId,
+            JsonRpcErrorCode.InvalidRequest,
+            "Invalid JSON-RPC request structure"
+          );
+          process.stdout.write(JSON.stringify(errorResponse) + "\n");
         }
       } catch (error) {
+        // Handle JSON parse errors
+        const errorResponse = createJsonRpcError(
+          requestId,
+          JsonRpcErrorCode.ParseError,
+          "Invalid JSON"
+        );
+        process.stdout.write(JSON.stringify(errorResponse) + "\n");
+
         logger.error("StandaloneMcpServer", "Error processing stdio request", {
           component: "Standalone",
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeErrorMessage(error),
         });
       }
     });
@@ -104,8 +123,23 @@ export class StandaloneMcpServer {
    * Starts HTTP transport.
    */
   private async startHttp(): Promise<void> {
+    // Security: Warn if HTTP server is exposed without authentication
+    const isExposed = !this.host || this.host === "0.0.0.0" || this.host !== "localhost" && this.host !== "127.0.0.1";
+    if (isExposed && !this.auth) {
+      logger.warn("StandaloneMcpServer", "HTTP server is exposed without authentication", {
+        component: "Standalone",
+        host: this.host || "0.0.0.0",
+        port: this.port,
+        warning: "Unauthenticated tool execution is enabled. This is a security risk in production.",
+        recommendation: "Configure 'auth' option or bind to localhost only.",
+      });
+    }
+
     logger.info("StandaloneMcpServer", "Starting HTTP transport", {
       component: "Standalone",
+      host: this.host || "0.0.0.0",
+      port: this.port,
+      hasAuth: !!this.auth,
     });
 
     this.httpServer = http.createServer(async (req, res) => {
@@ -384,7 +418,7 @@ export class StandaloneMcpServer {
       const sanitizedError = sanitizeErrorMessage(error);
       logger.error("StandaloneMcpServer", "Tool execution failed", {
         component: "Standalone",
-        toolName,
+        toolName: sanitizeName(toolName),
         error: sanitizedError,
       });
 
