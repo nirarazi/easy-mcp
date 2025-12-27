@@ -44,7 +44,7 @@ import { ConfigHolderService } from "../../config/config-holder.service";
 import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName, hashRateLimitIdentifier, sanitizeActorId } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 import { ContextProviderService } from "../context/context-provider.service";
@@ -634,7 +634,9 @@ export class McpServerService implements OnModuleInit {
 
     // Check rate limit
     if (tool.rateLimit && this.rateLimiter) {
-      const identifier = context?.userId || context?.sessionId || context?.metadata?.ip || "anonymous";
+      // Hash identifier to prevent spoofing while maintaining consistent rate limiting
+      const rawIdentifier = context?.userId || context?.sessionId || context?.metadata?.ip || "anonymous";
+      const identifier = hashRateLimitIdentifier(rawIdentifier);
       const rateLimitResult = this.rateLimiter.checkRateLimit(toolName, identifier, tool.rateLimit);
       if (!rateLimitResult.allowed) {
         logger.audit(
@@ -868,7 +870,7 @@ export class McpServerService implements OnModuleInit {
         progressCallback
       );
 
-      // Convert results to MCP format
+      // Convert results to MCP format with sanitization
       const result: BatchToolResult = {
         results: batchResults.map((br) => ({
           tool: br.tool,
@@ -878,7 +880,7 @@ export class McpServerService implements OnModuleInit {
                 content: [
                   {
                     type: "text",
-                    text: typeof br.result === "string" ? br.result : JSON.stringify(br.result, null, 2),
+                    text: sanitizeToolResult(br.result),
                   },
                 ],
                 isError: false,
@@ -900,6 +902,10 @@ export class McpServerService implements OnModuleInit {
         "Batch execution failed",
       );
     } finally {
+      // Clean up cancellation token and progress notifier
+      if (request.id != null) {
+        this.cancellationTokens.delete(request.id);
+      }
       this.progressNotifier?.cleanup(request.id);
     }
   }

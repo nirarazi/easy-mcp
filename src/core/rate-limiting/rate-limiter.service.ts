@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { RateLimitConfig, RateLimitResult, RateLimitEntry } from "./rate-limit.interface";
 import { logger } from "../utils/logger.util";
+import { sanitizeActorId } from "../utils/sanitize.util";
 
 /**
  * Parses time window string (e.g., '1m', '60s', '1h') to milliseconds
@@ -144,18 +145,20 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
         resetTime: entry.resetTime,
       };
     } catch (error) {
-      // Defensive error handling: if rate limiting fails, allow the request
-      // but log the error for investigation
+      // Defensive error handling: if rate limiting fails, fail closed (deny the request)
+      // This is more secure than failing open, as it prevents bypassing rate limits
+      // Log the error for investigation with sanitized identifier to prevent PII exposure
       logger.error("RateLimiterService", "Rate limit check failed", {
         component: "RateLimiter",
-        toolName,
-        identifier,
+        toolName: sanitizeActorId(toolName),
+        identifier: sanitizeActorId(identifier),
         error: error instanceof Error ? error.message : String(error),
       });
-      // Fail open: allow the request if rate limiting fails
+      // Fail closed: deny the request if rate limiting fails
+      // This prevents bypassing rate limits due to internal errors
       return {
-        allowed: true,
-        remaining: config.max,
+        allowed: false,
+        remaining: 0,
         resetTime: Date.now() + 60000, // Default 1 minute window
       };
     }

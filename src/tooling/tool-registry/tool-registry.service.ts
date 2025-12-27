@@ -82,19 +82,18 @@ export class ToolRegistryService {
     // Validate required scopes if tool has them
     if (tool.requiredScopes && tool.requiredScopes.length > 0) {
       if (!context || !context.scopes || context.scopes.length === 0) {
+        // Don't expose scope details to prevent information leakage
         throw new ToolExecutionError(
-          `Tool '${name}' requires scopes: ${tool.requiredScopes.join(", ")}`,
+          `Tool '${name}' requires additional permissions`,
           name,
         );
       }
 
       const hasAllScopes = tool.requiredScopes.every((scope) => context.scopes!.includes(scope));
       if (!hasAllScopes) {
-        const missingScopes = tool.requiredScopes.filter(
-          (scope) => !context.scopes!.includes(scope)
-        );
+        // Don't expose which scopes are missing or required to prevent information leakage
         throw new ToolExecutionError(
-          `Tool '${name}' requires scopes: ${tool.requiredScopes.join(", ")}. Missing: ${missingScopes.join(", ")}`,
+          `Tool '${name}' requires additional permissions`,
           name,
         );
       }
