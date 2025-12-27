@@ -17,6 +17,8 @@ import {
   McpTool,
   CallToolParams,
   CallToolResult,
+  BatchToolParams,
+  BatchToolResult,
   McpErrorCode,
   ListResourcesResult,
   McpResource,
@@ -51,6 +53,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { RateLimiterService } from "../rate-limiting/rate-limiter.service";
 import { RetryService } from "../resilience/retry.service";
 import { CircuitBreakerService } from "../resilience/circuit-breaker.service";
+import { BatchExecutorService } from "../batch/batch-executor.service";
 import { Optional } from "@nestjs/common";
 
 @Injectable()
@@ -75,6 +78,7 @@ export class McpServerService implements OnModuleInit {
     @Optional() private readonly rateLimiter?: RateLimiterService,
     @Optional() private readonly retryService?: RetryService,
     @Optional() private readonly circuitBreaker?: CircuitBreakerService,
+    @Optional() private readonly batchExecutor?: BatchExecutorService,
   ) {}
 
   private getServerInfo(): { name: string; version: string } {
@@ -188,6 +192,17 @@ export class McpServerService implements OnModuleInit {
         case "tools/call":
           response = await this.handleCallTool(request);
           // Audit logging for tools/call is done inside handleCallTool for more detail
+          return response;
+        case "tools/batch":
+          response = await this.handleBatchTools(request);
+          logger.audit(
+            "McpServerService",
+            "tools/batch",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
           return response;
         case "resources/list":
           response = this.handleListResources(request);
@@ -783,6 +798,96 @@ export class McpServerService implements OnModuleInit {
         this.cancellationTokens.delete(request.id);
         this.progressNotifier?.cleanup(request.id);
       }
+    }
+  }
+
+  /**
+   * Handles batch tool execution request.
+   */
+  private async handleBatchTools(
+    request: JsonRpcRequest
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as BatchToolParams | undefined;
+    const actorId = this.getActorIdentifier(request);
+
+    if (!params || !Array.isArray(params.tools)) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid tools array",
+      );
+    }
+
+    if (!this.batchExecutor) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.MethodNotFound,
+        "Batch execution not available",
+      );
+    }
+
+    // Extract context
+    const context = this.contextProvider.extractContext(request);
+
+    // Create cancellation token
+    const cancellationToken: CancellationToken = {
+      isCancelled: false,
+      onCancel: () => {},
+      cancel: () => {
+        cancellationToken.isCancelled = true;
+      },
+    };
+
+    // Create progress callback
+    const progressCallback = this.progressNotifier?.createProgressCallback(request.id);
+
+    try {
+      // Convert to batch format
+      const batchRequests = params.tools.map((tool) => ({
+        tool: tool.name,
+        args: tool.arguments || {},
+      }));
+
+      const batchResults = await this.batchExecutor.executeBatch(
+        batchRequests,
+        cancellationToken,
+        context,
+        progressCallback
+      );
+
+      // Convert results to MCP format
+      const result: BatchToolResult = {
+        results: batchResults.map((br) => ({
+          tool: br.tool,
+          success: br.success,
+          result: br.success
+            ? {
+                content: [
+                  {
+                    type: "text",
+                    text: typeof br.result === "string" ? br.result : JSON.stringify(br.result, null, 2),
+                  },
+                ],
+                isError: false,
+              }
+            : undefined,
+          error: br.success ? undefined : br.error,
+        })),
+      };
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      logger.error("McpServerService", "Batch tool execution failed", {
+        component: "Layer 3",
+        error: sanitizeErrorMessage(error),
+      });
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Batch execution failed",
+      );
+    } finally {
+      this.progressNotifier?.cleanup(request.id);
     }
   }
 
