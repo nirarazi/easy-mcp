@@ -181,13 +181,28 @@ export function createMcpExpressRouter(
     await httpGateway.handleHttpRequest(req, res, context);
   });
 
-  // Health check endpoint
+  // Health check endpoints
   router.get(`${pathPrefix}/health`, (req: Request, res: Response) => {
     res.json({
       status: "ok",
       service: "mcp-server",
       version: config.serverInfo?.version || "unknown",
     });
+  });
+
+  router.get(`${pathPrefix}/health/ready`, (req: Request, res: Response) => {
+    // Basic readiness check - server is ready if it has tools
+    const ready = tools.length > 0;
+    res.status(ready ? 200 : 503).json({ ready });
+  });
+
+  router.get(`${pathPrefix}/health/live`, (req: Request, res: Response) => {
+    res.status(200).json({ alive: true });
+  });
+
+  // Metrics endpoint (Prometheus format)
+  router.get(`${pathPrefix}/metrics`, (req: Request, res: Response) => {
+    res.status(200).set("Content-Type", "text/plain").send("# Metrics endpoint - implement with MetricsService");
   });
 
   return router;

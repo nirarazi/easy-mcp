@@ -31,17 +31,21 @@ export interface CancellationToken {
 }
 
 import { McpContext } from "../core/context/mcp-context.interface";
+import { RateLimitConfig, RetryConfig } from "../decorators/mcp-tool.decorator";
+import { ProgressCallback } from "../core/progress/progress-notifier.service";
 
 /**
  * Defines a function that the LLM can call.
  * This function takes key/value arguments and returns a result string or object.
  * Optionally accepts a cancellation token for long-running operations.
  * Optionally accepts context for user information and permissions.
+ * Optionally accepts a progress callback for long-running operations.
  */
 export type ToolFunction = (
   args: Record<string, any>,
   cancellationToken?: CancellationToken,
-  context?: McpContext
+  context?: McpContext,
+  progress?: ProgressCallback
 ) => Promise<any>;
 
 /**
@@ -68,4 +72,16 @@ export interface ToolDefinition {
 
   /** Optional icon URI for the tool. */
   icon?: string;
+
+  /** Required scopes/permissions for this tool */
+  requiredScopes?: string[];
+
+  /** Rate limiting configuration */
+  rateLimit?: RateLimitConfig;
+
+  /** Retry configuration */
+  retry?: RetryConfig;
+
+  /** Tool version */
+  version?: string;
 }

@@ -46,6 +46,12 @@ import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } f
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 import { ContextProviderService } from "../context/context-provider.service";
+import { ProgressNotifierService } from "../progress/progress-notifier.service";
+import { MetricsService } from "../observability/metrics.service";
+import { RateLimiterService } from "../rate-limiting/rate-limiter.service";
+import { RetryService } from "../resilience/retry.service";
+import { CircuitBreakerService } from "../resilience/circuit-breaker.service";
+import { Optional } from "@nestjs/common";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -64,6 +70,11 @@ export class McpServerService implements OnModuleInit {
     @Inject(CONFIG_TOKEN)
     private readonly configHolder: ConfigHolderService,
     private readonly contextProvider: ContextProviderService,
+    @Optional() private readonly progressNotifier?: ProgressNotifierService,
+    @Optional() private readonly metricsService?: MetricsService,
+    @Optional() private readonly rateLimiter?: RateLimiterService,
+    @Optional() private readonly retryService?: RetryService,
+    @Optional() private readonly circuitBreaker?: CircuitBreakerService,
   ) {}
 
   private getServerInfo(): { name: string; version: string } {
@@ -585,8 +596,76 @@ export class McpServerService implements OnModuleInit {
     // Extract context from request
     const context = this.contextProvider.extractContext(request);
 
+    // Check circuit breaker
+    if (this.circuitBreaker?.isOpen(toolName)) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Circuit breaker open",
+          toolName: sanitizeName(toolName),
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Service temporarily unavailable",
+      );
+    }
+
+    // Check rate limit
+    if (tool.rateLimit && this.rateLimiter) {
+      const identifier = context?.userId || context?.sessionId || "anonymous";
+      const rateLimitResult = this.rateLimiter.checkRateLimit(toolName, identifier, tool.rateLimit);
+      if (!rateLimitResult.allowed) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "Rate limit exceeded",
+            toolName: sanitizeName(toolName),
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidRequest,
+          `Rate limit exceeded. Try again after ${new Date(rateLimitResult.resetTime).toISOString()}`,
+        );
+      }
+    }
+
+    // Create progress callback if progress notifier is available
+    const progressCallback = this.progressNotifier?.createProgressCallback(request.id);
+
+    // Execute tool with retry if configured
+    const executeTool = async () => {
+      return await this.toolRegistry.executeTool(
+        toolName,
+        args,
+        cancellationToken,
+        context,
+        progressCallback
+      );
+    };
+
     try {
-      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken, context);
+      let toolResult: unknown;
+      if (tool.retry && this.retryService) {
+        toolResult = await this.retryService.executeWithRetry(executeTool, tool.retry);
+      } else {
+        toolResult = await executeTool();
+      }
+
+      // Record success for circuit breaker
+      this.circuitBreaker?.recordSuccess(toolName);
 
       // Check if cancelled during execution
       if (cancellationToken.isCancelled) {
@@ -626,6 +705,9 @@ export class McpServerService implements OnModuleInit {
 
       return createJsonRpcSuccess(request.id, result);
     } catch (error) {
+      // Record failure for circuit breaker
+      this.circuitBreaker?.recordFailure(toolName);
+
       // Handle tool-specific errors
       if (error instanceof ToolNotFoundError) {
         logger.audit(
@@ -696,9 +778,10 @@ export class McpServerService implements OnModuleInit {
         "Tool execution failed",
       );
     } finally {
-      // Clean up the cancellation token after the request is finished
+      // Clean up the cancellation token and progress notifier after the request is finished
       if (request.id !== null && request.id !== undefined) {
         this.cancellationTokens.delete(request.id);
+        this.progressNotifier?.cleanup(request.id);
       }
     }
   }

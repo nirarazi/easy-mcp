@@ -217,7 +217,7 @@ describe("McpServerService", () => {
       expect(response.result.content).toBeDefined();
       expect(toolRegistry.executeTool).toHaveBeenCalledWith("test_tool", {
         param: "value",
-      }, expect.anything(), undefined);
+      }, expect.anything(), undefined, undefined);
     });
 
     it("should handle unknown method", async () => {

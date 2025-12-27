@@ -58,7 +58,18 @@ export { VERSION, PACKAGE_NAME, getVersion, getPackageName } from './config/vers
 
 // Context and decorators
 export type { McpContext } from './core/context/mcp-context.interface';
-export { McpContext as McpContextDecorator, McpService, createFactoryProvider, McpParam } from './decorators';
+export {
+  McpContext as McpContextDecorator,
+  McpService,
+  createFactoryProvider,
+  McpParam,
+  McpTool,
+  McpErrorHandler,
+  McpMiddleware,
+  type McpToolOptions,
+  type RateLimitConfig,
+  type RetryConfig,
+} from './decorators';
 
 // Validation
 export { zodToJsonSchema, validateWithZod, safeValidateWithZod } from './validation';
