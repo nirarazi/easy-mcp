@@ -3,6 +3,7 @@ import { JsonRpcRequest, JsonRpcResponse } from "../../interface/jsonrpc.interfa
 import { McpContext } from "../context/mcp-context.interface";
 import { Middleware } from "./middleware.interface";
 import { logger } from "../utils/logger.util";
+import { sanitizeErrorMessage } from "../utils/sanitize.util";
 
 /**
  * Service for executing middleware pipelines.
@@ -40,10 +41,12 @@ export class MiddlewareExecutorService {
       try {
         return await middleware(request, context, next);
       } catch (error) {
+        // Sanitize error message to prevent sensitive data exposure in logs
+        const sanitizedError = sanitizeErrorMessage(error);
         logger.error("MiddlewareExecutorService", "Middleware execution failed", {
           component: "Middleware",
           middlewareIndex: index - 1,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizedError,
         });
         throw error;
       }

@@ -63,7 +63,36 @@ export class TracingService {
   }
 
   /**
+   * Validates and sanitizes a trace ID to prevent spoofing and injection.
+   * @param traceId The trace ID to validate
+   * @returns Validated trace ID or null if invalid
+   */
+  private validateTraceId(traceId: any): string | null {
+    if (!traceId || typeof traceId !== "string") {
+      return null;
+    }
+
+    // Remove control characters and newlines to prevent injection
+    let sanitized = traceId.replace(/[\x00-\x1F\x7F-\x9F\n\r]/g, "");
+
+    // Enforce maximum length to prevent DoS
+    const MAX_TRACE_ID_LENGTH = 128;
+    if (sanitized.length > MAX_TRACE_ID_LENGTH) {
+      return null;
+    }
+
+    // Validate UUID format (optional - can be any alphanumeric with dashes/underscores)
+    // Allow UUID v4 format or custom trace ID formats
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sanitized)) {
+      return null;
+    }
+
+    return sanitized;
+  }
+
+  /**
    * Extracts trace context from request headers/metadata.
+   * Validates and sanitizes trace IDs to prevent spoofing and injection.
    */
   extractTraceContext(headers?: Record<string, any>): TraceContext | undefined {
     if (!headers) {
@@ -74,16 +103,22 @@ export class TracingService {
     const spanId = headers["x-span-id"] || headers["span-id"];
     const parentSpanId = headers["x-parent-span-id"] || headers["parent-span-id"];
 
-    if (traceId) {
-      return {
-        traceId: String(traceId),
-        spanId: spanId ? String(spanId) : generateUUID(),
-        parentSpanId: parentSpanId ? String(parentSpanId) : undefined,
-        startTime: Date.now(),
-      };
+    // Validate trace ID - if invalid, don't extract context (prevent spoofing)
+    const validatedTraceId = traceId ? this.validateTraceId(traceId) : null;
+    if (!validatedTraceId) {
+      return undefined;
     }
 
-    return undefined;
+    // Validate span IDs if provided
+    const validatedSpanId = spanId ? this.validateTraceId(spanId) : null;
+    const validatedParentSpanId = parentSpanId ? this.validateTraceId(parentSpanId) : null;
+
+    return {
+      traceId: validatedTraceId,
+      spanId: validatedSpanId || generateUUID(),
+      parentSpanId: validatedParentSpanId || undefined,
+      startTime: Date.now(),
+    };
   }
 
   /**

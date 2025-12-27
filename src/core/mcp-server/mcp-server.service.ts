@@ -857,18 +857,111 @@ export class McpServerService implements OnModuleInit {
     const progressCallback = this.progressNotifier?.createProgressCallback(request.id);
 
     try {
-      // Convert to batch format
-      const batchRequests = params.tools.map((tool) => ({
-        tool: tool.name,
-        args: tool.arguments || {},
-      }));
+      // Validate each tool in the batch
+      const batchRequests: Array<{ tool: string; args: Record<string, any> }> = [];
+      const validationErrors: Array<{ tool: string; error: string }> = [];
 
+      for (const toolRequest of params.tools) {
+        // Validate tool name
+        if (!toolRequest.name || typeof toolRequest.name !== "string") {
+          validationErrors.push({
+            tool: String(toolRequest.name || "[unknown]"),
+            error: "Invalid tool name",
+          });
+          continue;
+        }
+
+        const toolName = toolRequest.name.trim();
+        if (toolName.length === 0) {
+          validationErrors.push({
+            tool: toolName,
+            error: "Tool name cannot be empty",
+          });
+          continue;
+        }
+
+        // Validate arguments type
+        let args: Record<string, any> = {};
+        if (toolRequest.arguments !== undefined && toolRequest.arguments !== null) {
+          if (typeof toolRequest.arguments !== "object" || Array.isArray(toolRequest.arguments)) {
+            validationErrors.push({
+              tool: toolName,
+              error: "Arguments must be a plain object",
+            });
+            continue;
+          }
+          args = toolRequest.arguments;
+        }
+
+        // Get tool definition for schema validation
+        const tool = this.toolRegistry.getTool(toolName);
+        if (!tool) {
+          validationErrors.push({
+            tool: toolName,
+            error: "Tool not found",
+          });
+          continue;
+        }
+
+        // Validate arguments against tool schema (same as single-tool path)
+        const validationError = validateToolArguments(args, tool.inputSchema);
+        if (validationError) {
+          validationErrors.push({
+            tool: toolName,
+            error: validationError,
+          });
+          continue;
+        }
+
+        batchRequests.push({
+          tool: toolName,
+          args,
+        });
+      }
+
+      // If there are validation errors, return them
+      if (validationErrors.length > 0) {
+        logger.audit(
+          "McpServerService",
+          "tools/batch",
+          "failure",
+          {
+            method: request.method,
+            validationErrors: validationErrors.length,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidParams,
+          `Batch validation failed: ${validationErrors.length} tool(s) have invalid parameters`,
+        );
+      }
+
+      // Execute batch with validated requests
       const batchResults = await this.batchExecutor.executeBatch(
         batchRequests,
         cancellationToken,
         context,
         progressCallback
       );
+
+      // Audit log per-tool results for better traceability
+      for (const result of batchResults) {
+        logger.audit(
+          "McpServerService",
+          "tools/batch/tool",
+          result.success ? "success" : "failure",
+          {
+            method: request.method,
+            toolName: sanitizeName(result.tool),
+            batchRequestId: request.id,
+          },
+          request.id,
+          actorId,
+        );
+      }
 
       // Convert results to MCP format with sanitization
       const result: BatchToolResult = {
