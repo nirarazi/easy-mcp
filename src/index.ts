@@ -60,3 +60,7 @@ export { VERSION, PACKAGE_NAME, getVersion, getPackageName } from './config/vers
 export type { McpContext } from './core/context/mcp-context.interface';
 export { McpContext as McpContextDecorator } from './decorators';
 
+// Express adapter
+export { createMcpExpressRouter } from './adapters/express';
+export type { CreateMcpExpressRouterOptions, McpAuthMiddleware } from './adapters/express';
+
