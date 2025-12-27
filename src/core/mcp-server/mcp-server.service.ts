@@ -818,6 +818,15 @@ export class McpServerService implements OnModuleInit {
       );
     }
 
+    // Validate batch size
+    if (params.tools.length > 100) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Batch size exceeds maximum limit of 100 tools",
+      );
+    }
+
     if (!this.batchExecutor) {
       return createJsonRpcError(
         request.id,
