@@ -267,11 +267,11 @@ EasyMCP implements the following MCP protocol methods:
   - Validates client protocol version
   - Returns server capabilities (currently supports tools)
   - Returns server information (name and version)
-  
+
 - **`tools/list`** - Returns all registered tools with their JSON Schema 2020-12 definitions
   - Returns array of tool definitions in MCP format
   - Each tool includes name, description, inputSchema, and optional icon
-  
+
 - **`tools/call`** - Executes a tool with provided arguments and returns the result
   - Validates tool arguments against JSON Schema 2020-12
   - Executes tool function
@@ -352,10 +352,10 @@ EasyMCP provides comprehensive error handling with custom error classes and clea
 ### Error Handling Examples
 
 ```typescript
-import { 
-  EasyMCP, 
-  ConfigurationError, 
-  ToolExecutionError, 
+import {
+  EasyMCP,
+  ConfigurationError,
+  ToolExecutionError,
   ToolNotFoundError
 } from 'easy-mcp-nest';
 
