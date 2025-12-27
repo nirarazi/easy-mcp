@@ -4,7 +4,7 @@ import { JsonRpcRequest, JsonRpcResponse, createJsonRpcSuccess, createJsonRpcErr
 import { InitializeParams, InitializeResult, ListToolsResult, McpTool, CallToolParams, CallToolResult, McpErrorCode } from "../interface/mcp-protocol.interface";
 import { McpContext } from "../core/context/mcp-context.interface";
 import { logger } from "../core/utils/logger.util";
-import { sanitizeToolResult, sanitizeName, sanitizeErrorMessage } from "../core/utils/sanitize.util";
+import { sanitizeToolResult, sanitizeName, sanitizeErrorMessage, sanitizeActorId } from "../core/utils/sanitize.util";
 import { ToolNotFoundError } from "../core/errors/easy-mcp-error";
 import * as readline from "readline";
 import * as http from "http";
@@ -165,6 +165,10 @@ export class StandaloneMcpServer {
         try {
           const request = JSON.parse(body);
           if (isValidJsonRpcRequest(request)) {
+            // Security: Strip any existing metadata from request to prevent spoofing
+            // Only metadata set by auth function should be trusted
+            delete request.metadata;
+
             // Extract context if auth is provided
             let context: McpContext | undefined;
             if (this.auth) {
@@ -172,7 +176,8 @@ export class StandaloneMcpServer {
               context = authContext || undefined;
             }
 
-            // Add context metadata to request
+            // Only add context metadata to request if auth provided it
+            // This prevents unauthenticated callers from spoofing context
             if (context) {
               request.metadata = {
                 userId: context.userId,
@@ -321,7 +326,8 @@ export class StandaloneMcpServer {
     }
 
     // Extract actor identifier for audit logging
-    const actorId = context?.userId || context?.sessionId || "anonymous";
+    // Sanitize to prevent PII exposure in audit logs
+    const actorId = sanitizeActorId(context?.sessionId || context?.userId || undefined);
 
     try {
       const toolResult = await this.toolRegistry.executeTool(toolName, args, undefined, context);

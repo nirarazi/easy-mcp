@@ -115,21 +115,22 @@ export function createMcpExpressRouter(
   }
 
   // Extract context from request (helper function)
-  // Security: Only extract from headers if auth middleware is configured
-  // Otherwise, only trust context set by auth middleware to prevent spoofing
+  // Security: Only trust context set by auth middleware when auth is configured
+  // Headers are never trusted when auth middleware is configured to prevent spoofing
   const extractContext = (req: Request): McpContext | undefined => {
     // Extract from request (set by auth middleware) - this is always trusted
     if ((req as any).mcpContext) {
       return (req as any).mcpContext as McpContext;
     }
 
-    // Only extract from headers if auth middleware is configured
-    // This prevents unauthenticated header spoofing
-    if (!options.auth && !options.oauth) {
+    // If auth middleware is configured, only trust mcpContext set by middleware
+    // Do not fall back to headers to prevent spoofing if middleware fails silently
+    if (options.auth || options.oauth) {
       return undefined;
     }
 
-    // If auth is configured, headers may be used as fallback (but auth middleware should set mcpContext)
+    // Only extract from headers if NO auth middleware is configured
+    // This is for development/testing scenarios only
     const context: Partial<McpContext> = {};
     if (req.headers["x-user-id"]) {
       context.userId = String(req.headers["x-user-id"]);
@@ -159,7 +160,7 @@ export function createMcpExpressRouter(
         id: null,
         error: {
           code: -32603,
-          message: "Internal error: MCP server not initialized",
+          message: "Internal error",
         },
       });
       return;

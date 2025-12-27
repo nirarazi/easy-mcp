@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { OAuthProviderService } from "./oauth-provider.service";
 import { McpContext } from "../../core/context/mcp-context.interface";
 import { logger } from "../../core/utils/logger.util";
-import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
+import { sanitizeErrorMessage, sanitizeActorId } from "../../core/utils/sanitize.util";
 
 /**
  * Creates Express middleware for OAuth token validation.
@@ -20,11 +20,28 @@ export function createOAuthMiddleware(
   oauthProvider: OAuthProviderService
 ): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   return async (req: Request, res: Response, next: NextFunction) => {
+    // Extract request identifier for audit logging
+    const requestId = req.headers["x-request-id"] || req.body?.id || null;
+    const clientIp = req.ip || req.socket.remoteAddress || "unknown";
+
     try {
       // Extract token from request
       const token = oauthProvider.extractTokenFromRequest(req);
 
       if (!token) {
+        // Audit log: Authentication failed - no token
+        logger.audit(
+          "OAuthMiddleware",
+          "oauth/authenticate",
+          "failure",
+          {
+            reason: "No token provided",
+            clientIp,
+          },
+          requestId,
+          clientIp,
+        );
+
         res.status(401).json({
           jsonrpc: "2.0",
           id: null,
@@ -39,6 +56,21 @@ export function createOAuthMiddleware(
       // Validate token and extract context
       const context = await oauthProvider.validateAndExtractContext(token);
 
+      // Extract actor identifier and sanitize to prevent PII exposure
+      const actorId = sanitizeActorId(context.sessionId || context.userId || undefined);
+
+      // Audit log: Authentication succeeded
+      logger.audit(
+        "OAuthMiddleware",
+        "oauth/authenticate",
+        "success",
+        {
+          clientIp,
+        },
+        requestId,
+        actorId,
+      );
+
       // Attach context to request for use in MCP handlers
       (req as any).mcpContext = context;
 
@@ -47,6 +79,19 @@ export function createOAuthMiddleware(
       logger.error("OAuthMiddleware", "Token validation failed", {
         error: sanitizeErrorMessage(error),
       });
+
+      // Audit log: Authentication failed - invalid token
+      logger.audit(
+        "OAuthMiddleware",
+        "oauth/authenticate",
+        "failure",
+        {
+          reason: "Token validation failed",
+          clientIp,
+        },
+        requestId,
+        clientIp,
+      );
 
       res.status(401).json({
         jsonrpc: "2.0",
