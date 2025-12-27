@@ -71,3 +71,7 @@ export type { CreateMcpExpressRouterOptions, McpAuthMiddleware } from './adapter
 export { OAuthProviderService, createOAuthMiddleware } from './auth/oauth';
 export type { OAuthProviderConfig, OAuthConfig, OAuthTokenValidator, OAuthContextExtractor } from './auth/oauth';
 
+// Standalone mode
+export { createMcpServer, StandaloneMcpServer } from './standalone';
+export type { CreateMcpServerOptions, StandaloneTransport, StandaloneAuthFunction } from './standalone';
+
