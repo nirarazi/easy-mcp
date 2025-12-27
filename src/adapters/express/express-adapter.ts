@@ -1,4 +1,5 @@
 import { Router, Request, Response, json } from "express";
+import { MAX_MESSAGE_SIZE_BYTES } from "../../config/constants";
 import { NestFactory } from "@nestjs/core";
 import { INestApplicationContext } from "@nestjs/common";
 import { AppModule } from "../../app.module";
@@ -9,6 +10,7 @@ import { INTERFACE_LAYER_TOKEN } from "../../config/constants";
 import { CreateMcpExpressRouterOptions } from "./types";
 import { McpContext } from "../../core/context/mcp-context.interface";
 import { logger } from "../../core/utils/logger.util";
+import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
 import { McpServerService } from "../../core/mcp-server/mcp-server.service";
 import { OAuthProviderService } from "../../auth/oauth/oauth-provider.service";
 import { createOAuthMiddleware } from "../../auth/oauth/oauth-middleware";
@@ -89,14 +91,14 @@ export function createMcpExpressRouter(
       next();
     } catch (error) {
       logger.error("ExpressAdapter", "Failed to initialize EasyMCP", {
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeErrorMessage(error),
       });
       res.status(500).json({
         jsonrpc: "2.0",
         id: null,
         error: {
           code: -32603,
-          message: "Internal error: Failed to initialize MCP server",
+          message: "Internal error",
         },
       });
     }
@@ -113,15 +115,22 @@ export function createMcpExpressRouter(
   }
 
   // Extract context from request (helper function)
+  // Security: Only extract from headers if auth middleware is configured
+  // Otherwise, only trust context set by auth middleware to prevent spoofing
   const extractContext = (req: Request): McpContext | undefined => {
-    const context: Partial<McpContext> = {};
-
-    // Extract from request (set by auth middleware)
+    // Extract from request (set by auth middleware) - this is always trusted
     if ((req as any).mcpContext) {
       return (req as any).mcpContext as McpContext;
     }
 
-    // Try to extract from headers
+    // Only extract from headers if auth middleware is configured
+    // This prevents unauthenticated header spoofing
+    if (!options.auth && !options.oauth) {
+      return undefined;
+    }
+
+    // If auth is configured, headers may be used as fallback (but auth middleware should set mcpContext)
+    const context: Partial<McpContext> = {};
     if (req.headers["x-user-id"]) {
       context.userId = String(req.headers["x-user-id"]);
     }
@@ -142,7 +151,8 @@ export function createMcpExpressRouter(
   };
 
   // Main JSON-RPC endpoint
-  router.post("/", json(), async (req: Request, res: Response) => {
+  // Configure body parser with size limit to prevent DoS
+  router.post("/", json({ limit: MAX_MESSAGE_SIZE_BYTES }), async (req: Request, res: Response) => {
     if (!httpGateway || !mcpServerService) {
       res.status(500).json({
         jsonrpc: "2.0",

@@ -47,13 +47,11 @@ function zodSchemaToJsonSchema(schema: z.ZodTypeAny): JsonSchema2020_12 {
   // Handle nullable
   if (schema instanceof z.ZodNullable) {
     const inner = zodSchemaToJsonSchema(schema._def.innerType);
+    // JSON Schema 2020-12 supports "null" type, so we can use oneOf with null
     return {
-      ...inner,
-      // JSON Schema doesn't have a direct nullable, but we can use oneOf
-      // Note: JSON Schema 2020-12 doesn't support "null" type, so we omit it
       oneOf: [
         inner,
-        { type: "object" as const, properties: {} },
+        { type: "null" as const },
       ],
     };
   }

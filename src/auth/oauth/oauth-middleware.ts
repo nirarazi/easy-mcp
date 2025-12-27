@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { OAuthProviderService } from "./oauth-provider.service";
 import { McpContext } from "../../core/context/mcp-context.interface";
 import { logger } from "../../core/utils/logger.util";
+import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
 
 /**
  * Creates Express middleware for OAuth token validation.
@@ -44,7 +45,7 @@ export function createOAuthMiddleware(
       next();
     } catch (error) {
       logger.error("OAuthMiddleware", "Token validation failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeErrorMessage(error),
       });
 
       res.status(401).json({

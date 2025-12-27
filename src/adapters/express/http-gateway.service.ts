@@ -12,6 +12,7 @@ import {
 import { logger } from "../../core/utils/logger.util";
 import { sanitizeErrorMessage } from "../../core/utils/sanitize.util";
 import { McpContext } from "../../core/context/mcp-context.interface";
+import { MAX_MESSAGE_SIZE_BYTES } from "../../config/constants";
 
 /**
  * HTTP Gateway Service for Express integration.
@@ -73,6 +74,18 @@ export class HttpGatewayService implements IInterfaceLayer {
     }
 
     try {
+      // Validate request body size (defense in depth - Express json() middleware should also enforce limit)
+      const contentLength = req.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > MAX_MESSAGE_SIZE_BYTES) {
+        const errorResponse = createJsonRpcError(
+          null,
+          JsonRpcErrorCode.InvalidRequest,
+          "Request body too large"
+        );
+        res.status(413).json(errorResponse);
+        return;
+      }
+
       // Parse JSON-RPC request from request body
       const body = req.body;
 

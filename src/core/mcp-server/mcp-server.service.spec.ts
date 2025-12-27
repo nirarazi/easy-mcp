@@ -12,6 +12,7 @@ import { ConfigHolderService } from "../../config/config-holder.service";
 import { McpConfig } from "../../config/mcp-config.interface";
 import { ResourceRegistryService } from "../../resources/resource-registry.service";
 import { PromptRegistryService } from "../../prompts/prompt-registry.service";
+import { ContextProviderService } from "../context/context-provider.service";
 
 describe("McpServerService", () => {
   let service: McpServerService;
@@ -107,6 +108,10 @@ describe("McpServerService", () => {
       getPromptContent: jest.fn(),
     };
 
+    const mockContextProvider = {
+      extractContext: jest.fn().mockReturnValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         McpServerService,
@@ -119,6 +124,7 @@ describe("McpServerService", () => {
         },
         { provide: INTERFACE_LAYER_TOKEN, useValue: mockInterfaceLayer },
         { provide: CONFIG_TOKEN, useValue: mockConfigHolder },
+        { provide: ContextProviderService, useValue: mockContextProvider },
       ],
     }).compile();
 
@@ -211,7 +217,7 @@ describe("McpServerService", () => {
       expect(response.result.content).toBeDefined();
       expect(toolRegistry.executeTool).toHaveBeenCalledWith("test_tool", {
         param: "value",
-      }, expect.anything());
+      }, expect.anything(), undefined);
     });
 
     it("should handle unknown method", async () => {

@@ -5,7 +5,7 @@
  * This follows the standard JSON Schema format.
  */
 export interface ToolParameter extends Record<string, any> {
-  type?: "string" | "number" | "integer" | "boolean" | "array" | "object";
+  type?: "string" | "number" | "integer" | "boolean" | "array" | "object" | "null";
   description?: string;
   enum?: (string | number | boolean)[];
   default?: any;

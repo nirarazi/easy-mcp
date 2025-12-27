@@ -320,6 +320,9 @@ export class StandaloneMcpServer {
       };
     }
 
+    // Extract actor identifier for audit logging
+    const actorId = context?.userId || context?.sessionId || "anonymous";
+
     try {
       const toolResult = await this.toolRegistry.executeTool(toolName, args, undefined, context);
       const sanitizedResult = sanitizeToolResult(toolResult);
@@ -334,9 +337,36 @@ export class StandaloneMcpServer {
         isError: false,
       };
 
+      // Audit log: Tool execution completed successfully
+      logger.audit(
+        "StandaloneMcpServer",
+        "tools/call",
+        "success",
+        {
+          toolName: sanitizeName(toolName),
+          resultSize: sanitizedResult.length,
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
       return createJsonRpcSuccess(request.id, result);
     } catch (error) {
       if (error instanceof ToolNotFoundError) {
+        // Audit log: Tool not found
+        logger.audit(
+          "StandaloneMcpServer",
+          "tools/call",
+          "failure",
+          {
+            reason: "ToolNotFoundError",
+            toolName: sanitizeName(toolName),
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
         return createJsonRpcError(
           request.id,
           McpErrorCode.ToolNotFound,
@@ -351,6 +381,21 @@ export class StandaloneMcpServer {
         toolName,
         error: sanitizedError,
       });
+
+      // Audit log: Tool execution failed
+      logger.audit(
+        "StandaloneMcpServer",
+        "tools/call",
+        "failure",
+        {
+          reason: "ToolExecutionError",
+          toolName: sanitizeName(toolName),
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+
       return createJsonRpcError(
         request.id,
         McpErrorCode.ToolExecutionError,
