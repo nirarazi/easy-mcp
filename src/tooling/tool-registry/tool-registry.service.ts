@@ -1,9 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional, Inject } from "@nestjs/common";
 import { ToolDefinition, ToolParameter } from "../tool.interface";
 import { ToolRegistrationInput, JsonSchema2020_12 } from "../../config/mcp-config.interface";
 import { ToolNotFoundError, ToolExecutionError } from "../../core/errors/easy-mcp-error";
 import { logger } from "../../core/utils/logger.util";
 import { isSafeObjectKey } from "../../core/utils/sanitize.util";
+import { scanClassesForTools } from "../../core/utils/decorator-scanner";
+import { McpContext } from "../../core/context/mcp-context.interface";
+import { ProgressCallback } from "../../core/progress/progress-notifier.service";
+import { MetricsService } from "../../core/observability/metrics.service";
 
 /**
  * Type representing a tool schema in the format expected by LLM providers.
@@ -27,6 +31,8 @@ export interface LlmToolSchema {
 @Injectable()
 export class ToolRegistryService {
   private readonly registry = new Map<string, ToolDefinition>();
+
+  constructor(@Optional() private metricsService?: MetricsService) {}
 
   /**
    * Registers a new tool, making it available for the LLM to call.
@@ -56,25 +62,53 @@ export class ToolRegistryService {
    * @param args The arguments to pass to the tool function
    * @param cancellationToken Optional cancellation token for long-running operations
    * @param context Optional context for user information and permissions
+   * @param progress Optional progress callback for long-running operations
    * @returns The result of the tool execution
    * @throws ToolNotFoundError if the tool is not registered
-   * @throws ToolExecutionError if the tool execution fails
+   * @throws ToolExecutionError if the tool execution fails or scope validation fails
    */
   public async executeTool(
     name: string,
     args: Record<string, any>,
     cancellationToken?: import("../tool.interface").CancellationToken,
-    context?: import("../../core/context/mcp-context.interface").McpContext
+    context?: McpContext,
+    progress?: ProgressCallback
   ): Promise<any> {
     const tool = this.getTool(name);
     if (!tool) {
       throw new ToolNotFoundError(name);
     }
 
+    // Validate required scopes if tool has them
+    if (tool.requiredScopes && tool.requiredScopes.length > 0) {
+      if (!context || !context.scopes || context.scopes.length === 0) {
+        // Don't expose scope details to prevent information leakage
+        throw new ToolExecutionError(
+          `Tool '${name}' requires additional permissions`,
+          name,
+        );
+      }
+
+      const hasAllScopes = tool.requiredScopes.every((scope) => context.scopes!.includes(scope));
+      if (!hasAllScopes) {
+        // Don't expose which scopes are missing or required to prevent information leakage
+        throw new ToolExecutionError(
+          `Tool '${name}' requires additional permissions`,
+          name,
+        );
+      }
+    }
+
+    // Record metrics start
+    const recordEnd = this.metricsService?.recordToolStart(name);
+
     try {
-      const result = await tool.execute(args, cancellationToken, context);
+      const result = await tool.execute(args, cancellationToken, context, progress);
+      recordEnd?.();
       return result;
     } catch (error) {
+      recordEnd?.();
+      this.metricsService?.recordToolError(name);
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new ToolExecutionError(
         `Tool '${name}' execution failed: ${errorMessage}`,
@@ -82,6 +116,27 @@ export class ToolRegistryService {
         error instanceof Error ? error : undefined,
       );
     }
+  }
+
+  /**
+   * Registers tools from decorator-based classes.
+   * Scans classes for @McpTool decorated methods and registers them automatically.
+   *
+   * @param classes Array of class constructors to scan
+   * @param instances Optional map of class to instance (if already instantiated)
+   */
+  public registerToolsFromDecorators(
+    classes: Array<new (...args: any[]) => any>,
+    instances?: Map<new (...args: any[]) => any, any>
+  ): void {
+    const tools = scanClassesForTools(classes, instances);
+    for (const tool of tools) {
+      this.registerTool(tool);
+    }
+    logger.info("ToolRegistryService", `Registered ${tools.length} tool(s) from decorators`, {
+      component: "ToolRegistry",
+      toolCount: tools.length,
+    });
   }
 
   /**

@@ -308,3 +308,35 @@ export function sanitizeActorId(actorId: string | undefined): string {
     return 'anonymous';
   }
 }
+
+/**
+ * Creates a stable hash of an identifier for rate limiting.
+ * This prevents identifier spoofing while maintaining consistent rate limiting per user/IP.
+ * Uses a simple hash function (not cryptographically secure, but sufficient for rate limiting).
+ * @param identifier The identifier to hash (userId, sessionId, IP, etc.)
+ * @returns A hashed identifier safe for rate limiting
+ */
+export function hashRateLimitIdentifier(identifier: string): string {
+  if (!identifier || typeof identifier !== 'string') {
+    return 'anonymous';
+  }
+
+  try {
+    // Normalize the identifier (remove whitespace, lowercase for consistency)
+    const normalized = identifier.trim().toLowerCase();
+
+    // Simple hash function (not cryptographically secure, but sufficient for rate limiting)
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+      const char = normalized.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+
+    // Return a consistent hash format
+    return `rl:${Math.abs(hash).toString(36)}`;
+  } catch {
+    // If processing fails, return a generic placeholder
+    return 'anonymous';
+  }
+}

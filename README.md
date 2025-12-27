@@ -460,6 +460,182 @@ Debug mode provides detailed information about:
 
 **Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
 
+## High-Value Framework Features
+
+EasyMCP provides production-ready features out of the box:
+
+### 1. Declarative Tool Registration with @McpTool
+
+Define tools using decorators for automatic discovery and registration:
+
+```typescript
+import { McpTool, McpParam, McpContext } from 'easy-mcp-nest';
+import { z } from 'zod';
+
+const CreateBuildingSchema = z.object({
+  name: z.string(),
+  address: z.string(),
+});
+
+@McpTool({
+  name: 'create_building',
+  description: 'Creates a new building',
+  requiredScopes: ['building:write'],
+  rateLimit: { max: 10, window: '1m' },
+  retry: { maxAttempts: 3, backoff: 'exponential' }
+})
+async createBuilding(
+  @McpParam(CreateBuildingSchema) params: z.infer<typeof CreateBuildingSchema>,
+  @McpContext() context: McpContext
+) {
+  return this.service.createBuilding(context.userId, params);
+}
+```
+
+### 2. Automatic Scope Checking
+
+Declarative scope validation - framework handles security automatically:
+
+```typescript
+@McpTool({
+  name: 'delete_building',
+  requiredScopes: ['building:write', 'building:delete']
+})
+```
+
+### 3. Progress Notifications
+
+Report progress for long-running operations:
+
+```typescript
+@McpTool({ name: 'analyze_debts' })
+async analyzeDebts(
+  args: any,
+  cancellationToken?: CancellationToken,
+  context?: McpContext,
+  progress?: ProgressCallback
+) {
+  progress?.({ progress: 0.1, message: 'Fetching payment data...' });
+  // ... work ...
+  progress?.({ progress: 0.5, message: 'Processing 5/10 apartments...' });
+  // ... work ...
+  progress?.({ progress: 1.0, message: 'Complete!' });
+}
+```
+
+### 4. Built-in Observability
+
+Automatic metrics collection and Prometheus-compatible endpoints:
+
+- Tool execution count
+- Average execution time
+- Error rate by tool
+- Request tracing
+- Performance monitoring
+
+Access metrics at `/metrics` endpoint (Prometheus format).
+
+### 5. Rate Limiting
+
+Per-tool rate limiting with configurable limits:
+
+```typescript
+@McpTool({
+  name: 'create_building',
+  rateLimit: { max: 10, window: '1m' } // 10 requests per minute
+})
+```
+
+### 6. Retry Logic
+
+Automatic retry with exponential backoff:
+
+```typescript
+@McpTool({
+  name: 'create_building',
+  retry: {
+    maxAttempts: 3,
+    backoff: 'exponential',
+    initialDelay: 100,
+    maxDelay: 10000
+  }
+})
+```
+
+### 7. Circuit Breaker
+
+Automatic circuit breaking when error rate exceeds threshold:
+
+- Prevents overwhelming system during outages
+- Automatic recovery with half-open state
+- Per-tool circuit breakers
+
+### 8. Error Handling Hooks
+
+Centralized error handling with decorators:
+
+```typescript
+@McpErrorHandler((error, context) => {
+  logErrorSecurely('MCP error', error, context);
+  return sanitizeError(error);
+})
+export class MyErrorHandler {}
+```
+
+### 9. Middleware System
+
+Pre/post execution hooks for cross-cutting concerns:
+
+```typescript
+@McpMiddleware(async (req, context, next) => {
+  const start = Date.now();
+  const result = await next();
+  logPerformance(req.method, Date.now() - start);
+  return result;
+})
+export class PerformanceMiddleware {}
+```
+
+### 10. Batch Tool Execution
+
+Execute multiple tools in parallel:
+
+```typescript
+// JSON-RPC request
+{
+  "jsonrpc": "2.0",
+  "method": "tools/batch",
+  "params": {
+    "tools": [
+      { "name": "create_building", "arguments": {...} },
+      { "name": "add_apartment", "arguments": {...} }
+    ]
+  }
+}
+```
+
+### 11. Health Check Endpoints
+
+Production-ready health checks:
+
+- `GET /health` - Basic health check
+- `GET /health/ready` - Readiness probe
+- `GET /health/live` - Liveness probe
+- `GET /metrics` - Prometheus metrics
+
+### 12. Testing Utilities
+
+Easy testing with test helpers:
+
+```typescript
+import { createMcpTestApp, mockMcpContext } from 'easy-mcp-nest';
+
+const app = await createMcpTestApp([BuildingTools]);
+const context = mockMcpContext({ userId: '123', scopes: ['read', 'write'] });
+const result = await app.callTool('create_building', params, context);
+await app.close();
+```
+
 ## New Features
 
 ### Express Adapter

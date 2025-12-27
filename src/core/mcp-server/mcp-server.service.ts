@@ -17,6 +17,8 @@ import {
   McpTool,
   CallToolParams,
   CallToolResult,
+  BatchToolParams,
+  BatchToolResult,
   McpErrorCode,
   ListResourcesResult,
   McpResource,
@@ -42,10 +44,17 @@ import { ConfigHolderService } from "../../config/config-holder.service";
 import { VERSION, PACKAGE_NAME } from "../../config/version";
 import { validateToolArguments } from "../utils/schema-validator";
 import { logger } from "../utils/logger.util";
-import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName } from "../utils/sanitize.util";
+import { sanitizeToolResult, sanitizeErrorMessage, sanitizeUri, sanitizeName, hashRateLimitIdentifier, sanitizeActorId } from "../utils/sanitize.util";
 import { CancellationToken } from "../../tooling/tool.interface";
 import { MAX_RESOURCE_CONTENT_SIZE_BYTES, MAX_CANCELLATION_TOKENS } from "../../config/constants";
 import { ContextProviderService } from "../context/context-provider.service";
+import { ProgressNotifierService } from "../progress/progress-notifier.service";
+import { MetricsService } from "../observability/metrics.service";
+import { RateLimiterService } from "../rate-limiting/rate-limiter.service";
+import { RetryService } from "../resilience/retry.service";
+import { CircuitBreakerService } from "../resilience/circuit-breaker.service";
+import { BatchExecutorService } from "../batch/batch-executor.service";
+import { Optional } from "@nestjs/common";
 
 @Injectable()
 export class McpServerService implements OnModuleInit {
@@ -64,6 +73,12 @@ export class McpServerService implements OnModuleInit {
     @Inject(CONFIG_TOKEN)
     private readonly configHolder: ConfigHolderService,
     private readonly contextProvider: ContextProviderService,
+    @Optional() private readonly progressNotifier?: ProgressNotifierService,
+    @Optional() private readonly metricsService?: MetricsService,
+    @Optional() private readonly rateLimiter?: RateLimiterService,
+    @Optional() private readonly retryService?: RetryService,
+    @Optional() private readonly circuitBreaker?: CircuitBreakerService,
+    @Optional() private readonly batchExecutor?: BatchExecutorService,
   ) {}
 
   private getServerInfo(): { name: string; version: string } {
@@ -177,6 +192,17 @@ export class McpServerService implements OnModuleInit {
         case "tools/call":
           response = await this.handleCallTool(request);
           // Audit logging for tools/call is done inside handleCallTool for more detail
+          return response;
+        case "tools/batch":
+          response = await this.handleBatchTools(request);
+          logger.audit(
+            "McpServerService",
+            "tools/batch",
+            response.error ? "failure" : "success",
+            { method: request.method },
+            request.id,
+            this.getActorIdentifier(request),
+          );
           return response;
         case "resources/list":
           response = this.handleListResources(request);
@@ -585,8 +611,78 @@ export class McpServerService implements OnModuleInit {
     // Extract context from request
     const context = this.contextProvider.extractContext(request);
 
+    // Check circuit breaker
+    if (this.circuitBreaker?.isOpen(toolName)) {
+      logger.audit(
+        "McpServerService",
+        "tools/call",
+        "failure",
+        {
+          reason: "Circuit breaker open",
+          toolName: sanitizeName(toolName),
+          method: request.method,
+        },
+        request.id,
+        actorId,
+      );
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Service temporarily unavailable",
+      );
+    }
+
+    // Check rate limit
+    if (tool.rateLimit && this.rateLimiter) {
+      // Hash identifier to prevent spoofing while maintaining consistent rate limiting
+      const rawIdentifier = context?.userId || context?.sessionId || context?.metadata?.ip || "anonymous";
+      const identifier = hashRateLimitIdentifier(rawIdentifier);
+      const rateLimitResult = this.rateLimiter.checkRateLimit(toolName, identifier, tool.rateLimit);
+      if (!rateLimitResult.allowed) {
+        logger.audit(
+          "McpServerService",
+          "tools/call",
+          "failure",
+          {
+            reason: "Rate limit exceeded",
+            toolName: sanitizeName(toolName),
+            method: request.method,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidRequest,
+          `Rate limit exceeded. Try again after ${new Date(rateLimitResult.resetTime).toISOString()}`,
+        );
+      }
+    }
+
+    // Create progress callback if progress notifier is available
+    const progressCallback = this.progressNotifier?.createProgressCallback(request.id);
+
+    // Execute tool with retry if configured
+    const executeTool = async () => {
+      return await this.toolRegistry.executeTool(
+        toolName,
+        args,
+        cancellationToken,
+        context,
+        progressCallback
+      );
+    };
+
     try {
-      const toolResult: unknown = await this.toolRegistry.executeTool(toolName, args, cancellationToken, context);
+      let toolResult: unknown;
+      if (tool.retry && this.retryService) {
+        toolResult = await this.retryService.executeWithRetry(executeTool, tool.retry);
+      } else {
+        toolResult = await executeTool();
+      }
+
+      // Record success for circuit breaker
+      this.circuitBreaker?.recordSuccess(toolName);
 
       // Check if cancelled during execution
       if (cancellationToken.isCancelled) {
@@ -626,6 +722,9 @@ export class McpServerService implements OnModuleInit {
 
       return createJsonRpcSuccess(request.id, result);
     } catch (error) {
+      // Record failure for circuit breaker
+      this.circuitBreaker?.recordFailure(toolName);
+
       // Handle tool-specific errors
       if (error instanceof ToolNotFoundError) {
         logger.audit(
@@ -696,10 +795,211 @@ export class McpServerService implements OnModuleInit {
         "Tool execution failed",
       );
     } finally {
-      // Clean up the cancellation token after the request is finished
+      // Clean up the cancellation token and progress notifier after the request is finished
       if (request.id !== null && request.id !== undefined) {
         this.cancellationTokens.delete(request.id);
+        this.progressNotifier?.cleanup(request.id);
       }
+    }
+  }
+
+  /**
+   * Handles batch tool execution request.
+   */
+  private async handleBatchTools(
+    request: JsonRpcRequest
+  ): Promise<JsonRpcResponse> {
+    const params = request.params as BatchToolParams | undefined;
+    const actorId = this.getActorIdentifier(request);
+
+    if (!params || !Array.isArray(params.tools)) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Missing or invalid tools array",
+      );
+    }
+
+    // Validate batch size
+    if (params.tools.length > 100) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.InvalidParams,
+        "Batch size exceeds maximum limit of 100 tools",
+      );
+    }
+
+    if (!this.batchExecutor) {
+      return createJsonRpcError(
+        request.id,
+        JsonRpcErrorCode.MethodNotFound,
+        "Batch execution not available",
+      );
+    }
+
+    // Extract context
+    const context = this.contextProvider.extractContext(request);
+
+    // Create cancellation token
+    const cancellationToken: CancellationToken = {
+      isCancelled: false,
+      onCancel: () => {},
+      cancel: () => {
+        cancellationToken.isCancelled = true;
+      },
+    };
+    // Register cancellation token for batch requests
+    if (request.id != null) {
+      this.cancellationTokens.set(request.id, cancellationToken);
+    }
+
+    // Create progress callback
+    const progressCallback = this.progressNotifier?.createProgressCallback(request.id);
+
+    try {
+      // Validate each tool in the batch
+      const batchRequests: Array<{ tool: string; args: Record<string, any> }> = [];
+      const validationErrors: Array<{ tool: string; error: string }> = [];
+
+      for (const toolRequest of params.tools) {
+        // Validate tool name
+        if (!toolRequest.name || typeof toolRequest.name !== "string") {
+          validationErrors.push({
+            tool: String(toolRequest.name || "[unknown]"),
+            error: "Invalid tool name",
+          });
+          continue;
+        }
+
+        const toolName = toolRequest.name.trim();
+        if (toolName.length === 0) {
+          validationErrors.push({
+            tool: toolName,
+            error: "Tool name cannot be empty",
+          });
+          continue;
+        }
+
+        // Validate arguments type
+        let args: Record<string, any> = {};
+        if (toolRequest.arguments !== undefined && toolRequest.arguments !== null) {
+          if (typeof toolRequest.arguments !== "object" || Array.isArray(toolRequest.arguments)) {
+            validationErrors.push({
+              tool: toolName,
+              error: "Arguments must be a plain object",
+            });
+            continue;
+          }
+          args = toolRequest.arguments;
+        }
+
+        // Get tool definition for schema validation
+        const tool = this.toolRegistry.getTool(toolName);
+        if (!tool) {
+          validationErrors.push({
+            tool: toolName,
+            error: "Tool not found",
+          });
+          continue;
+        }
+
+        // Validate arguments against tool schema (same as single-tool path)
+        const validationError = validateToolArguments(args, tool.inputSchema);
+        if (validationError) {
+          validationErrors.push({
+            tool: toolName,
+            error: validationError,
+          });
+          continue;
+        }
+
+        batchRequests.push({
+          tool: toolName,
+          args,
+        });
+      }
+
+      // If there are validation errors, return them
+      if (validationErrors.length > 0) {
+        logger.audit(
+          "McpServerService",
+          "tools/batch",
+          "failure",
+          {
+            method: request.method,
+            validationErrors: validationErrors.length,
+          },
+          request.id,
+          actorId,
+        );
+        return createJsonRpcError(
+          request.id,
+          JsonRpcErrorCode.InvalidParams,
+          `Batch validation failed: ${validationErrors.length} tool(s) have invalid parameters`,
+        );
+      }
+
+      // Execute batch with validated requests
+      const batchResults = await this.batchExecutor.executeBatch(
+        batchRequests,
+        cancellationToken,
+        context,
+        progressCallback
+      );
+
+      // Audit log per-tool results for better traceability
+      for (const result of batchResults) {
+        logger.audit(
+          "McpServerService",
+          "tools/batch/tool",
+          result.success ? "success" : "failure",
+          {
+            method: request.method,
+            toolName: sanitizeName(result.tool),
+            batchRequestId: request.id,
+          },
+          request.id,
+          actorId,
+        );
+      }
+
+      // Convert results to MCP format with sanitization
+      const result: BatchToolResult = {
+        results: batchResults.map((br) => ({
+          tool: br.tool,
+          success: br.success,
+          result: br.success
+            ? {
+                content: [
+                  {
+                    type: "text",
+                    text: sanitizeToolResult(br.result),
+                  },
+                ],
+                isError: false,
+              }
+            : undefined,
+          error: br.success ? undefined : br.error,
+        })),
+      };
+
+      return createJsonRpcSuccess(request.id, result);
+    } catch (error) {
+      logger.error("McpServerService", "Batch tool execution failed", {
+        component: "Layer 3",
+        error: sanitizeErrorMessage(error),
+      });
+      return createJsonRpcError(
+        request.id,
+        McpErrorCode.ToolExecutionError,
+        "Batch execution failed",
+      );
+    } finally {
+      // Clean up cancellation token and progress notifier
+      if (request.id != null) {
+        this.cancellationTokens.delete(request.id);
+      }
+      this.progressNotifier?.cleanup(request.id);
     }
   }
 

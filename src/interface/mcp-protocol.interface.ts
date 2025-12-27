@@ -83,6 +83,28 @@ export interface CallToolResult {
 }
 
 /**
+ * Batch tool execution request parameters
+ */
+export interface BatchToolParams {
+  tools: Array<{
+    name: string;
+    arguments?: Record<string, any>;
+  }>;
+}
+
+/**
+ * Batch tool execution result
+ */
+export interface BatchToolResult {
+  results: Array<{
+    tool: string;
+    success: boolean;
+    result?: CallToolResult;
+    error?: string;
+  }>;
+}
+
+/**
  * Resource definition in MCP format
  */
 export interface McpResource {
@@ -294,4 +316,3 @@ export enum McpErrorCode {
   ElicitationNotSupported = -32007,
   RequestCancelled = -32008,
 }
-
