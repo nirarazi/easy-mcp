@@ -29,10 +29,24 @@ EasyMCP requires the following peer dependencies to be installed:
 - `@nestjs/core` ^11.0.1
 - `@nestjs/platform-express` ^11.0.1
 
-Install them with:
+**Optional peer dependencies** (for specific features):
+- `express` ^4.18.0 (for Express adapter)
+- `zod` ^3.22.0 (for TypeScript-first validation)
+
+Install required dependencies with:
 
 ```bash
 npm install @nestjs/common@^11.0.1 @nestjs/core@^11.0.1 @nestjs/platform-express@^11.0.1
+```
+
+Install optional dependencies as needed:
+
+```bash
+# For Express adapter
+npm install express@^4.18.0
+
+# For Zod validation
+npm install zod@^3.22.0
 ```
 
 ## Quick Start
@@ -193,6 +207,7 @@ process.on('SIGINT', async () => {
 
 ### Types
 
+**Core Types:**
 - `McpConfig` - Main configuration interface
 - `ToolRegistrationInput` - Tool definition interface
 - `ServerInfo` - Optional server information
@@ -206,6 +221,13 @@ process.on('SIGINT', async () => {
 - `McpErrorCode` - MCP error code enum
 - `VERSION`, `PACKAGE_NAME`, `getVersion()`, `getPackageName()` - Version information utilities
 - `INTERFACE_LAYER_TOKEN` - Token for accessing the interface layer (advanced use cases)
+
+**New Feature Types:**
+- `McpContext` - Context interface for user information
+- `CreateMcpExpressRouterOptions` - Express adapter options
+- `OAuthProviderConfig`, `OAuthConfig` - OAuth configuration
+- `CreateMcpServerOptions` - Standalone server options
+- `StandaloneTransport` - Transport type ('stdio' | 'http')
 
 ## Architecture
 
@@ -310,7 +332,7 @@ This enables the MCP-specified Content-Length header format, which some clients 
 
 ### Limitations
 
-- **Transport**: Currently only stdio transport is supported. WebSocket and HTTP transports are not available.
+- **Transport**: stdio transport is fully supported. HTTP transport is available via Express adapter. WebSocket transport is not available.
 - **Protocol Version**: Only protocol version 2025-11-25 is supported. Older or newer versions will be rejected.
 - **Resources Subscribe/Unsubscribe**: Basic resource subscription is not yet implemented (resources/list and resources/read are supported)
 
@@ -437,6 +459,142 @@ Debug mode provides detailed information about:
 - Argument validation
 
 **Note**: The `DEBUG` environment variable accepts either `'1'` or `'true'` (case-sensitive) to enable debug logging.
+
+## New Features
+
+### Express Adapter
+
+Use EasyMCP in Express applications without requiring NestJS for the HTTP layer:
+
+```typescript
+import express from 'express';
+import { createMcpExpressRouter } from 'easy-mcp-nest';
+
+const app = express();
+app.use(express.json());
+
+const mcpRouter = createMcpExpressRouter({
+  tools: [BuildingTools, PaymentTools],
+  resources: [BuildingResources],
+  auth: mcpAuthMiddleware, // Optional
+});
+
+app.use('/mcp', mcpRouter);
+app.listen(3000);
+```
+
+### Context Injection
+
+Inject user context into tools using the `@McpContext()` decorator:
+
+```typescript
+import { McpContext, McpContextDecorator } from 'easy-mcp-nest';
+
+@McpTool({ name: 'create_building' })
+async createBuilding(
+  @McpParam() params: CreateBuildingDto,
+  @McpContextDecorator() context: McpContext
+) {
+  return this.service.createBuilding(context.userId, params);
+}
+```
+
+### Factory Pattern Support
+
+Use factory functions instead of dependency injection:
+
+```typescript
+import { McpService } from 'easy-mcp-nest';
+
+@McpTool({ name: 'create_building' })
+export class BuildingTools {
+  constructor(
+    @McpService(() => getBuildingService())
+    private buildingService: BuildingService
+  ) {}
+}
+```
+
+### OAuth Integration
+
+Standardize OAuth integration across MCP servers:
+
+```typescript
+import { createOAuthMiddleware, OAuthProviderConfig } from 'easy-mcp-nest';
+
+const oauthConfig: OAuthProviderConfig = {
+  provider: 'custom',
+  validateToken: async (token) => {
+    // Validate token and return payload
+    return jwt.verify(token, secret);
+  },
+  extractContext: (payload) => ({
+    userId: payload.sub,
+    scopes: payload.scopes,
+    buildingIds: payload.buildingIds,
+  }),
+};
+
+const oauthMiddleware = createOAuthMiddleware(oauthProviderService);
+app.use('/mcp', oauthMiddleware, mcpRouter);
+```
+
+### TypeScript-First Validation with Zod
+
+Use Zod schemas for type-safe validation:
+
+```typescript
+import { z } from 'zod';
+import { McpParam } from 'easy-mcp-nest';
+
+const CreateBuildingSchema = z.object({
+  name: z.string(),
+  address: z.string(),
+  floors: z.number().int().min(1).max(100),
+});
+
+@McpTool({ name: 'create_building' })
+async createBuilding(
+  @McpParam(CreateBuildingSchema) params: z.infer<typeof CreateBuildingSchema>
+) {
+  // params is fully typed and validated
+  return this.service.createBuilding(params);
+}
+```
+
+### Standalone Mode
+
+Use EasyMCP without NestJS:
+
+```typescript
+import { createMcpServer } from 'easy-mcp-nest';
+
+const server = createMcpServer({
+  tools: [BuildingTools, PaymentTools],
+  resources: [BuildingResources],
+  transport: 'http', // or 'stdio'
+  auth: validateMcpToken, // Optional
+  port: 3000,
+});
+
+await server.start();
+```
+
+### Testing Utilities
+
+Test MCP tools easily:
+
+```typescript
+import { createMcpTestApp, mockMcpContext } from 'easy-mcp-nest';
+
+const app = await createMcpTestApp([BuildingTools]);
+const context = mockMcpContext({
+  userId: '123',
+  scopes: ['read', 'write'],
+});
+const result = await app.callTool('create_building', params, context);
+await app.close();
+```
 
 ## Examples
 
